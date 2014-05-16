@@ -64,7 +64,7 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 					\item Flattening.
 					\item Monotonicity Check (?).
 					\item Tries to guess at the interface states (polynomial fitting??).
-					\item Performs characteristic Tracing.  I have more detailed notes on what happens during this, but it's similar to MC 4.2.3 .
+					\item Performs characteristic Tracing.  I have more detailed notes on what happens during this, but it's similar to MC 4.2.3 .  See Section \ref{sec:characteristic}.
 					\item Finalizes the calculation of Riemann states?
 				\end{enumerate}
 				These functions are called during this:
@@ -108,6 +108,21 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 
 	
 	\end{description}
-	
-\end{description}
+	\end{description}
+
+\section{Characteristic Tracing}
+\label{sec:characteristic}
+These are equations I was able to decifer from \verb!hy_uhdDataREconstructNormalDir_PPM!.  I'm going to focus on step $8$, characteristic tracing, which is similar to MC section 4.2.3 .
+
+\beq
+\mathbf{\lambda}_0 = \begin{pmatrix}v_x - c\\v_x \\ v_x \\ v_x + c\end{pmatrix}
+\eeq
+Where $c$ is just the sound speed in hydro.  This is the eigenvector computed in the \verb!hy_uhd_eigenVector! function.
+
+Our vector of variables is
+\beq
+\mathbf{Q} = \begin{pmatrix}\rho\\v_x \\ v_y \\ v_z \\ P
+\end{pmatrix}.
+\eeq
+
 \end{document}
