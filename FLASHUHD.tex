@@ -59,11 +59,13 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 				\item \textbf{DataReconstructNomralDir\_PPM} The driver of PPM and characteristic tracing.  The steps described are as follows:
 				\begin{enumerate}
 					\item Calculate $\vec{\lambda}$, which is the vector of characteristic speeds.
-					\item Projects $\bar{\Delta}$ to primitives (?).  Carries out $U = \frac{1}{2} \left( U_C + U_L -\bar{\Delta}_O  - \bar{\Delta}_N \right)$.  I'm not really sure what this all means.
+					\item Estimates the slope of the primitives and some additional variables at the interfaces by calling \verb!hy_uhd_TVDslope! (see below).  Projects $\bar{\Delta}$ (AKA \verb!delbar!, $delta q$), the estimated slope at each interface, to primitives (?).%  Carries out $U = \frac{1}{2} \left( U_C + U_L -\bar{\Delta}_O  - \bar{\Delta}_N \right)$.  I'm not really sure what this all means.%
+					\item Performs PPM Polynomial interpolation.   Carries out $q_{i+\frac{1}{2}} = \frac{1}{2} \left( q_{i+1} + q_i \right) - \frac{1}{6} \left( \delta q_{i+1} - \delta q_i \right)$, which is equation 66 in MC.  Note that they mention CW equation 1.9, which is equivalent to MC equation 67.  I don't see this done anywhere, however.  I think this might be for some sort of special case or higher order estimate or for use when you have a simpler version of $\delta q$, but I'm really not sure.
+					\item Interpolates species and mass scalars (which we don't use).
 					\item Carries out steepening (which is turned off in the setup we use).
-					\item Flattening.
-					\item Monotonicity Check (?).
-					\item Tries to guess at the interface states (polynomial fitting??).
+					\item Flattening.  The flattening coefficent is actually set up in \verb!hy_uhd_getRiemannState! and carried into this function.  Flattening is described in Equations 74-80 in MC.  This is applied to the species first, then to \verb!vecL! and \verb!vecR!, which are the left and right interface values, $q_{i-\frac{1}{2}}$ and $q_{i+\frac{1}{2}}$ in MC notation.  Note that the form of the flattening matrix does involve pressures, so this may be something we need to look at down the road in our changes.  MC equations 70a and 70b are carried out here.
+					\item Monotonicity Check.  This is equivalent to equations 69a, 69b, and 69c of MC.
+					\item "Take initial guesses for the left and right states."  First, this calculates $\Delta q_i$ (\verb!delW!) and $q_6i$ (\verb!W6!, note the typo in MC; there should not be a $\Delta$ here) as defined in MC Equations 72b and 72c.  I describe these matrices a bit more in Section \ref{sec:characteristic} below.  
 					\item Performs characteristic Tracing.  I have more detailed notes on what happens during this, but it's similar to MC 4.2.3 .  See Section \ref{sec:characteristic}.
 					\item Finalizes the calculation of Riemann states?
 				\end{enumerate}
@@ -72,7 +74,8 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 					\item \textbf{eigenParameters} Calculates several parameters needed for the wave speed eigenvalue calculations.
 					\item \textbf{eigenValue} Calculates the eigenvalues (wave speeds) that fill the eigenvectors.
 					\item \textbf{eigenVector} Fills the $\vec{\lambda}$ eigenvector in primative or conservative form. 
-					\item \textbf{upwindTransverseFlux} 
+					\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way." (sic)  ???  See Section 3 of MC, especially Section 3.2.  This computes \verb!sig!, the "transverse flux vector."
+					\item \textbf{TVDslope} "This routine calculates limited slopes depending on the user's choice of the slope limiter."  We use a \verb!minmod! slope limiter.  \verb!delbar! (the vector $\bar{\Delta}$) is returned, which contains the limited slopes for primitive variables + \verb!gamc!, \verb!game!, and gravity.  It is similar to, but not the same as some of the slope limiters described on pages 46 and 47 of MC.
 				\end{itemize}
 			\end{itemize}
 			\item Applies geometric terms.
@@ -93,10 +96,10 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 		\end{itemize}
 		\item[unsplitUpdate] Given the fluxes, updates the conserved, cell-centered quantities.  This is responsible for getting all the variables and geometric terms in the right form so it can call two subfunctions that are present in this file.
 		\begin{itemize}
-			\item \textbf{updateConservedVariable} Computes $U = U-\frac{\Delta t}{\Delta x}\left( F_R - F_L \right)$.
-			\item \textbf{updateInternalEnergy} When flag \verb!hy_useAuxEintEqn! is set, computes $\epsilon = \epsilon + \frac{\Delta t}{\Delta x} \left( F_L - F_R + P (F_L - F_R))$.
+			\item \textbf{updateConservedVariable} Computes $U = U-\frac{\Delta t}{\Delta x}\left( F_R - F_L \right)$.  See equations 53 and 63a in MC?
+			\item \textbf{updateInternalEnergy} When flag \verb!hy_useAuxEintEqn! is set, computes $\epsilon = \epsilon + \frac{\Delta t}{\Delta x} \left( F_L - F_R + P (F_L - F_R) \right)$.
 		\end{itemize}
-		\item[multiTemp/unsplitUpdateMultiTemp] Updates energies for the special 3T conditions.  See the FLASH manual for more information on the "`Rage-like"' approach used here.  Some of the weird uhd crashes I've seen occur here.  There are comments that explicitly state these crashes occur for "`unknown reasons."'  This calls \textbf{hy\_uhd\_ragelike}.
+		\item[multiTemp/unsplitUpdateMultiTemp] Updates energies for the special 3T conditions.  See the FLASH manual for more information on the "Rage-like" approach used here.  Some of the weird uhd crashes I've seen occur here.  There are comments that explicitly state these crashes occur for "unknown reasons."  This calls \textbf{hy\_uhd\_ragelike}.
 		
 		\item[energyFix] Corrects energy in cases where the total energy is advected and \verb!eint! can become negative.  In the three temperature case, this step is actually handled by \textbf{unsplitUpdateMultiTemp}.
 		\item[Grid\_conserveFluxes]
@@ -112,17 +115,60 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 
 \section{Characteristic Tracing}
 \label{sec:characteristic}
-These are equations I was able to decifer from \verb!hy_uhdDataREconstructNormalDir_PPM!.  I'm going to focus on step $8$, characteristic tracing, which is similar to MC section 4.2.3 .
+These are equations I was able to decipher from \verb!hy_uhdDataREconstructNormalDir_PPM!.  I'm going to focus on step $8$, characteristic tracing, which is similar to MC section 4.2.3 .
 
 \beq
 \mathbf{\lambda}_0 = \begin{pmatrix}v_x - c\\v_x \\ v_x \\ v_x + c\end{pmatrix}
 \eeq
-Where $c$ is just the sound speed in hydro.  This is the eigenvector computed in the \verb!hy_uhd_eigenVector! function.
+Where $c$ is sound speed.  This is the eigenvector computed in the \verb!hy_uhd_eigenVector! function.  This is the variable \verb!lambda0!.
 
 Our vector of variables is
 \beq
 \mathbf{Q} = \begin{pmatrix}\rho\\v_x \\ v_y \\ v_z \\ P
-\end{pmatrix}.
+\end{pmatrix},
 \eeq
+where $P$ is the total pressure.
+
+The left eigenvector (variable \verb!leig0!)  as defined in \verb!hy_uhd_eigenvector! is
+\beq
+\mathbf{L} = 
+\begin{pmatrix}
+0 & 0 & 1 & 0 & 0 \\
+-\frac{1}{2} c & 0 & 0 & 0 & \frac{1}{2 c} \\
+0 & -\rho & 0 & \rho & 0 \\
+0 & 0 & 0 & \rho & 0 \\
+\frac{1}{2 \rho c^2} & 0 & \frac{1}{c} & 0 & \frac{1}{2 \rho c^2}
+\end{pmatrix}
+\eeq
+
+The right eigenvector (variable \verb!reig0!) is
+\beq
+\mathbf{R} = 
+\begin{pmatrix}
+\rho & 0 & 1 & 0 & \rho \\
+-c & 0 & 0 & 0 & c \\
+0 & 0 & -\frac{1}{\rho} & 0 & 0 \\
+0 & 0 & 0 & \frac{1}{\rho} & 0 \\
+\rho c^2 & 0 & 0 & 0 & \rho c^2
+\end{pmatrix}
+\eeq
+
+The array \verb!delW! is
+\beq
+\Delta \mathbf{Q} = \mathbf{Q}_{\rm R} - \mathbf{Q}_{\rm L},
+\eeq
+where $Q_{\rm R}$ and $Q_{\rm L}$ are the right and left interface values of the primitive variables, which is equivalent to $\delta \mathbf{q}$ defined in equation 64 of MC.
+
+The array \verb!W6! is
+\beq
+\mathbf{Q}_6 = 6 \mathbf{Q}_{\rm C} - \frac{1}{2} \left( \mathbf{Q}_{\rm R} + \mathbf{Q}_{\rm L} \right),
+\eeq
+where $Q_{\rm C}$ is the cell-centered value of the primitive vector, $\mathbf{Q}$.  This is equivalent to $q_{6i}$
+
+Section 7a of \verb!DataReconstructNormalDir_PPM! calculates
+\beq
+q_i = q_{i-\frac{1}{2}} - \lambda_{\rm max} \frac{\Delta t}{2 \Delta x} \left[ \Delta q_i - q_6i \left( 1 - \lambda_{\rm max} \frac{4}{3} \frac{\Delta t}{\Delta x}  \right) \right].
+\eeq
+This is similar to, but deviates from equation 71 in MC. 
 
 \end{document}
