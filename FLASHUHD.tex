@@ -51,10 +51,9 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 		\item[putGravityUnsplit]
 		\item[getRiemannState]  Calculates and stores Riemann state values at cell interfaces so we can use these to compute fluxes, see MC 4.2.3
 		\begin{itemize}
-			\item First, some "`hybrid order"' things that we do not use (?).
-			\item Then, slope flattening is carried out: MC 4.2.2 .
-			\item Then, we start calculating Riemann states.
-			\item \textbf{dataReconstOneStep} Evolves cell-centered values by $\Delta t / 2$ at cell interfaces using PPM characteristic tracing.  Most of this is carried out in the function below.
+			\item Computes the divergence of the velocity field.
+			\item Prepares slope flattening variables that later get used later in PPM: MC 4.2.2 .
+			\item Prepares the vector of variables and calls \textbf{dataReconstOneStep}, which evolves cell-centered values by $\Delta t / 2$ at cell interfaces using PPM characteristic tracing.  Most of this is carried out in the function below.
 			\begin{itemize}
 				\item \textbf{DataReconstructNomralDir\_PPM} The driver of PPM and characteristic tracing.  The steps described are as follows:
 				\begin{enumerate}
@@ -67,7 +66,7 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 					\item Monotonicity Check.  This is equivalent to equations 69a, 69b, and 69c of MC.
 					\item "Take initial guesses for the left and right states."  This calculates $\Delta q_i$ (\verb!delW!) and $q_{6i}$ (\verb!W6!, note the typo in MC; there should not be a $\Delta$ here) as defined in MC Equations 72b and 72c.  I describe these matrices a bit more in Section \ref{sec:characteristic} below.  There are some additional computations relating to the \verb!Wp! and \verb!Wm! arrays in the code.  However, it turns out that all of these changes are overwritten later on, so these are apparently vestigial and not used.  Everything in the sections labeled 7a, 7b, 7c, and 7d in FLASH can be ignored.
 					\item "Advance the above interpolated interface values by $\frac{1}{2}$ time step using characteristic Tracing."  I have more detailed notes on what happens during this, but it's similar to MC 4.2.3 .  See Section \ref{sec:characteristic}.
-					\item Finalizes the calculation of Riemann states?
+					\item Finalizes the calculation of Riemann states.  This is described in Section \ref{sec:characteristic}, but it is unclear to me how these equations relate to what is done in MC.  Regardless, we end with what should be the value of all of the primitives at each of the faces a half timestep advanced.
 				\end{enumerate}
 				These functions are called during this:
 				\begin{itemize}
@@ -78,11 +77,11 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 					\item \textbf{TVDslope} "This routine calculates limited slopes depending on the user's choice of the slope limiter."  We use a \verb!minmod! slope limiter.  \verb!delbar! (the vector $\bar{\Delta}$) is returned, which contains the limited slopes for primitive variables + \verb!gamc!, \verb!game!, and gravity.  It is similar to, but not the same as some of the slope limiters described on pages 46 and 47 of MC.
 				\end{itemize}
 			\end{itemize}
-			\item Applies geometric terms.
-			\item Updates Gravity.
+			\item Applies geometric terms.  Not needed for Cartesian.
+			\item Updates Gravity.  It looks like they're just adding in the last term of MC 53.
 			\item Stores scratch terms for each direction.
-			\item Applies transverse correction terms for 3D.
-			\item \textbf{upwindTransverseFlux}
+			\item Applies transverse correction terms for 3D.  \verb!hy_use3dFullCTU! is turned on in our code.  I believe this has something to do with what's going on in Sections 3.2 and 3.3 of MC, but I haven't walked through this line by line yet.  The bulk of this seems to be handled by the next function call below.
+			\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unspit way."  This is also called above, inside the PPM solver.  I don't understand why this is called in two separate places here.
 		\end{itemize}
 		\item[getFaceFlux] Computes fluxes at cell faces.  Also calls specific solvers (e.g. \textbf{HLL}).  Calculates min timestep and alters fluxes for artificial viscosity.
 		\begin{itemize}
