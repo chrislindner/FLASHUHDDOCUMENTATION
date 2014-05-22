@@ -65,15 +65,15 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 					\item Carries out steepening (which is turned off in the setup we use).
 					\item Flattening.  The flattening coefficent is actually set up in \verb!hy_uhd_getRiemannState! and carried into this function.  Flattening is described in Equations 74-80 in MC.  This is applied to the species first, then to \verb!vecL! and \verb!vecR!, which are the left and right interface values, $q_{i-\frac{1}{2}}$ and $q_{i+\frac{1}{2}}$ in MC notation.  Note that the form of the flattening matrix does involve pressures, so this may be something we need to look at down the road in our changes.  MC equations 70a and 70b are carried out here.
 					\item Monotonicity Check.  This is equivalent to equations 69a, 69b, and 69c of MC.
-					\item "Take initial guesses for the left and right states."  First, this calculates $\Delta q_i$ (\verb!delW!) and $q_6i$ (\verb!W6!, note the typo in MC; there should not be a $\Delta$ here) as defined in MC Equations 72b and 72c.  I describe these matrices a bit more in Section \ref{sec:characteristic} below.  
-					\item Performs characteristic Tracing.  I have more detailed notes on what happens during this, but it's similar to MC 4.2.3 .  See Section \ref{sec:characteristic}.
+					\item "Take initial guesses for the left and right states."  This calculates $\Delta q_i$ (\verb!delW!) and $q_{6i}$ (\verb!W6!, note the typo in MC; there should not be a $\Delta$ here) as defined in MC Equations 72b and 72c.  I describe these matrices a bit more in Section \ref{sec:characteristic} below.  There are some additional computations relating to the \verb!Wp! and \verb!Wm! arrays in the code.  However, it turns out that all of these changes are overwritten later on, so these are apparently vestigial and not used.  Everything in the sections labeled 7a, 7b, 7c, and 7d in FLASH can be ignored.
+					\item "Advance the above interpolated interface values by $\frac{1}{2}$ time step using characteristic Tracing."  I have more detailed notes on what happens during this, but it's similar to MC 4.2.3 .  See Section \ref{sec:characteristic}.
 					\item Finalizes the calculation of Riemann states?
 				\end{enumerate}
 				These functions are called during this:
 				\begin{itemize}
 					\item \textbf{eigenParameters} Calculates several parameters needed for the wave speed eigenvalue calculations.
-					\item \textbf{eigenValue} Calculates the eigenvalues (wave speeds) that fill the eigenvectors.
-					\item \textbf{eigenVector} Fills the $\vec{\lambda}$ eigenvector in primative or conservative form. 
+					\item \textbf{eigenValue} Calculates the eigenvalues (wave speeds) that fill the eigenvectors.  Fills $\lambda_0$ (see Section \ref{sec:characteristic}).
+					\item \textbf{eigenVector} Fills the $\mathbf{L}$ and $\mathbf{R}$ eigenvectors in primative or conservative form (see Section \ref{sec:characteristic}). 
 					\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way." (sic)  ???  See Section 3 of MC, especially Section 3.2.  This computes \verb!sig!, the "transverse flux vector."
 					\item \textbf{TVDslope} "This routine calculates limited slopes depending on the user's choice of the slope limiter."  We use a \verb!minmod! slope limiter.  \verb!delbar! (the vector $\bar{\Delta}$) is returned, which contains the limited slopes for primitive variables + \verb!gamc!, \verb!game!, and gravity.  It is similar to, but not the same as some of the slope limiters described on pages 46 and 47 of MC.
 				\end{itemize}
@@ -118,18 +118,18 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 These are equations I was able to decipher from \verb!hy_uhdDataREconstructNormalDir_PPM!.  I'm going to focus on step $8$, characteristic tracing, which is similar to MC section 4.2.3 .
 
 \beq
-\mathbf{\lambda}_0 = \begin{pmatrix}v_x - c\\v_x \\ v_x \\ v_x + c\end{pmatrix}
+\mathbf{\lambda}_0 = \begin{pmatrix}v_x - c\\v_x \\ v_x \\ v_x \\ v_x + c\end{pmatrix}
 \eeq
-Where $c$ is sound speed.  This is the eigenvector computed in the \verb!hy_uhd_eigenVector! function.  This is the variable \verb!lambda0!.
+Where $c$ is sound speed.  This is computed in the \verb!hy_uhd_eigenValue! function.  This is the variable \verb!lambda0! in the code and known as $\Lambda$ in MC.  
 
-Our vector of variables is
+Our vector of primitive variables is
 \beq
 \mathbf{Q} = \begin{pmatrix}\rho\\v_x \\ v_y \\ v_z \\ P
 \end{pmatrix},
 \eeq
 where $P$ is the total pressure.
 
-The left eigenvector (variable \verb!leig0!)  as defined in \verb!hy_uhd_eigenvector! is
+The left eigenvector (variable \verb!leig0!)  as defined in \verb!hy_uhd_eigenVector! is
 \beq
 \mathbf{L} = 
 \begin{pmatrix}
@@ -169,6 +169,18 @@ Section 7a of \verb!DataReconstructNormalDir_PPM! calculates
 \beq
 q_i = q_{i-\frac{1}{2}} - \lambda_{\rm max} \frac{\Delta t}{2 \Delta x} \left[ \Delta q_i - q_6i \left( 1 - \lambda_{\rm max} \frac{4}{3} \frac{\Delta t}{\Delta x}  \right) \right].
 \eeq
-This is similar to, but deviates from equation 71 in MC. 
+This is similar to, but deviates from equation 71 in MC.  It turns out that this calculation is overwritten later in the code, so this is unused.
+
+The final Riemann states are calculated via 
+\beq
+\label{rstates}
+\mathbf{Q}_{i-\frac{1}{2}}^{t+\frac{\Delta t}{2}} = \mathbf{Q}_{i}^{t} + \frac{\mathbf{Q}_{i6}}{12} + \sum\limits_n L^*_n.
+\eeq
+$L^*_n$, which is referred to as \verb!vecL! in the code is
+\bea
+L^*_n &=& \frac{1}{2} \left( -1 - \frac{\Delta t}{\Delta x} \lambda_{0}^n \right) \mathbf{R}^n \left( \mathbf{L}^n \cdot \Delta \mathbf{Q} \right) \nonumber \\
+&+& \frac{1}{4} \left[ 1 + 2 \frac{\Delta t}{\Delta x} \lambda_{0}^n  + \frac{4}{3} \left( \frac{\Delta t}{\Delta x} \lambda_0^n \right)^2 \right] \mathbf{R}^n \left( \mathbf{L}^n \cdot - \mathbf{Q}_{i6} \right)
+\eea
+where $\mathbf{R}^n$ is the $n$th column of $\mathbf{R}$.  There is a corresponding form of these equations for the right face states as well.
 
 \end{document}
