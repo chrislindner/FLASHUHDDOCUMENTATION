@@ -40,7 +40,44 @@ Most of the files relevant to the unsplit solver are in \\
 
 Any file or directory names I mention will be relative to this directory.
 
-Section \ref{sec:flowchart} contains a basic overview flowchart of how the solver works.  There are some brief descriptions of select files as well.
+Section \ref{sec:hydro} describes the basic equations of radiation hydrodynamics that FLASH is trying to solve.  Section \ref{sec:flowchart} contains a basic overview flowchart of how the solver works.  There are some brief descriptions of select files as well.
+
+\section{FLASH Multispecies Hydrodynamics}
+\label{sec:hydro}
+The basic equations of hydrodynamics solved by the FLASH multispecies solver are mass conservation
+\beq 
+\label{eq:e1}
+\partial_t \rho + \nabla \cdot (\rho \mathbf{v}) = 0, 
+\eeq
+momentum conservation
+\beq
+\label{eq:e2}
+\partial_t (\rho\mathbf{v}) + \nabla \cdot (\rho\mathbf{v}\mathbf{v}) + \nabla P_{\rm tot} = 0,
+\eeq
+total energy conservation,
+\beq
+\label{eq:e3}
+\partial_t (\rho E_{\rm tot}) + \nabla \cdot \left[ \left( \rho E_{\rm tot} + P_{\rm tot} \right) \mathbf{v} \right] = 0,
+\eeq
+and the individual equations for internal energy advection.  In the three temperature, radiation hydrodynamics unit of FLASH, energy advection is split into three equations, one for each species
+\bea 
+\label{eq:e4}
+\partial_t (\rho \epsilon_{\rm ele}) + \nabla \cdot [\rho \epsilon_{\rm ele} \mathbf{v}] = 0, \\
+\label{eq:e5}
+\partial_t (\rho \epsilon_{\rm ion}) + \nabla \cdot [\rho \epsilon_{\rm ion} \mathbf{v}] = 0, \\
+\label{eq:e6}
+\partial_t (\rho \epsilon_{\rm rad}) + \nabla \cdot [\rho \epsilon_{\rm rad} \mathbf{v}] = 0.
+\eea
+
+FLASH then calculates the changes in total energy due to hydrodynamic work and shock heating and distributes this energy among the species according to the ratios of pressures in a "RAGE-like" approach \citep{Gittings:08}.  This is carried out in four steps:
+\begin{enumerate}
+  \item Equations \ref{eq:e1}, \ref{eq:e2}, \ref{eq:e3}, \ref{eq:e4}, \ref{eq:e5}, and \ref{eq:e6} are evolved simultaneously and internal energies are updated to reflect changes due to advection.
+  \item The change in total specific internal energy is calculated via $\Delta \epsilon_{\rm tot} = \Delta E_{\rm tot} - \mathbf{v} \cdot \mathbf{v} / 2$.
+  \item The change in specific internal energy due to hydrodynamic work and shock heating is calculated via $\Delta \epsilon^{\rm work}_{\rm tot} + \Delta \epsilon^{\rm shock}_{\rm tot} = \Delta \epsilon_{\rm tot} - \Delta \epsilon_{\rm tot}^{\rm adv}$, where $\Delta \epsilon_{\rm tot}^{\rm adv}$ is the change in specific internal energy solely due to advection.
+  \item The energy $\Delta \epsilon^{\rm work}_{\rm tot} + \Delta \epsilon^{\rm shock}_{\rm tot}$ is distributed evenly among all three species according to the ratio of their pressures.
+\end{enumerate}
+This method ensures that energy is distributed among the species correctly in smooth flows, but may fail to do so near shocks\footnote{For further justification and explanation of radiation hydrodynamics unit in FLASH, consult the FLASH Users Guide version 4 available at http://flash.uchicago.edu/.}.  By advecting each species separately, we are able to maintain separate temperatures for the gas and radiation.  The equations above do not account for energy gains or losses from radiative diffusion, radiation-matter coupling, gravity, or artificial heating source terms.  These components are carried out operator-split from the equations above.
+
 
 \section{General Flowchart}
 \label{sec:flowchart}
@@ -98,9 +135,13 @@ Section \ref{sec:flowchart} contains a basic overview flowchart of how the solve
 			\item \textbf{updateConservedVariable} Computes $U = U-\frac{\Delta t}{\Delta x}\left( F_R - F_L \right)$.  See equations 53 and 63a in MC?
 			\item \textbf{updateInternalEnergy} When flag \verb!hy_useAuxEintEqn! is set, computes $\epsilon = \epsilon + \frac{\Delta t}{\Delta x} \left( F_L - F_R + P (F_L - F_R) \right)$.
 		\end{itemize}
-		\item[multiTemp/unsplitUpdateMultiTemp] Updates energies for the special 3T conditions.  See the FLASH manual for more information on the "Rage-like" approach used here.  Some of the weird uhd crashes I've seen occur here.  There are comments that explicitly state these crashes occur for "unknown reasons."  This calls \textbf{hy\_uhd\_ragelike}.
+		\item[multiTemp/unsplitUpdateMultiTemp] Updates energies for the special 3T conditions.  See Section \ref{sec:hydro} and the FLASH manual for more information on the "Rage-like" approach used here.  Some of the weird uhd crashes I've seen occur here.  There are comments that explicitly state these crashes occur for "unknown reasons."
+		\begin{itemize}
+			\item \textbf{hy\_uhd\_ragelike} FLASH then calculates the changes in total energy due to hydrodynamic work and shock heating and distributes this energy among the species according to the ratios of pressures in a "RAGE-like" approach.  See Section \ref{sec:hydro}.  Calls \textbf{hy\_uhd\_getPressure} and \textbf{Hydro\_recalibrateEints}.
+		\end{itemize}
 		
 		\item[energyFix] Corrects energy in cases where the total energy is advected and \verb!eint! can become negative.  In the three temperature case, this step is actually handled by \textbf{unsplitUpdateMultiTemp}.
+		\item[Grid\_putFluxData] " Put the fluxes in a direction specified by axis for boundary cells for block blockID. This routine needs to be used with adaptive mesh since fluxes calculated by the two blocks that are at fine/coarse boundary have different accuracy. The fluxes calculated by individual blocks are reported to  the Grid through this call. Once that is done, a call to Grid_conserveFluxes applies the flux conservation algorithm to make it consistent across the fine/coarse boundaries."
 		\item[Grid\_conserveFluxes]
 		\item[Eos\_wrapped]
 		\item[putGravityUnsplit]
