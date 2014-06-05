@@ -1,6 +1,7 @@
 \documentclass[preprint,11pt]{aastex}
 %\documentclass{emulateapj}
 \pdfoutput=1
+\usepackage{color}
 \usepackage{apjfonts,amsmath}
 \usepackage{graphicx,verbatim}
 \newcommand{\beq}{\begin{equation}}
@@ -50,10 +51,12 @@ The basic equations of hydrodynamics solved by the FLASH multispecies solver are
 \partial_t \rho + \nabla \cdot (\rho \mathbf{v}) = 0, 
 \eeq
 momentum conservation
+{\color{red}
 \beq
 \label{eq:e2}
 \partial_t (\rho\mathbf{v}) + \nabla \cdot (\rho\mathbf{v}\mathbf{v}) + \nabla P_{\rm tot} = 0,
 \eeq
+}
 total energy conservation,
 \beq
 \label{eq:e3}
@@ -68,6 +71,7 @@ and the individual equations for internal energy advection.  In the three temper
 \label{eq:e6}
 \partial_t (\rho \epsilon_{\rm rad}) + \nabla \cdot [\rho \epsilon_{\rm rad} \mathbf{v}] = 0.
 \eea
+Note that we do not include terms involving radiation diffusion or radiation-matter coupling via opacity here.  These terms are present in FLASH, but carried out in an operator-split fashion from the hydrodynamics, and solved in a different unit.
 
 FLASH then calculates the changes in total energy due to hydrodynamic work and shock heating and distributes this energy among the species according to the ratios of pressures in a "RAGE-like" approach \citep{Gittings:08}.  This is carried out in four steps:
 \begin{enumerate}
@@ -78,6 +82,18 @@ FLASH then calculates the changes in total energy due to hydrodynamic work and s
 \end{enumerate}
 This method ensures that energy is distributed among the species correctly in smooth flows, but may fail to do so near shocks\footnote{For further justification and explanation of radiation hydrodynamics unit in FLASH, consult the FLASH Users Guide version 4 available at http://flash.uchicago.edu/.}.  By advecting each species separately, we are able to maintain separate temperatures for the gas and radiation.  The equations above do not account for energy gains or losses from radiative diffusion, radiation-matter coupling, gravity, or artificial heating source terms.  These components are carried out operator-split from the equations above.
 
+If we include opacity effects in the low optical depth limits, the complete momentum equation should be
+{\color{blue}
+\beq
+\label{eq:newmom}
+\partial_t (\rho\mathbf{v}) + \nabla \cdot (\rho\mathbf{v}\mathbf{v}) + \nabla P_{\rm tot} - \frac{\lambda}{3} \nabla P_{\rm r}= 0,
+\eeq
+}
+where $P_{\rm m} = P_{\rm e} + P_{\rm i}$ is the matter (electron $+$ ion) pressure, $\lambda$ is the flux limiter, and $P_{\rm r}$ is the radiation pressure.  Note that we are working in the non-relativistic limit and ignoring terms of $\mathcal{O}(\frac{v}{C})$.  We also do not implement a variable Eddington factor, a key difference from Z11.  The flux limiter used in flash is
+\beq
+\lambda = \frac{c}{3\sigma_{tot} + \frac{|\nabla u_{r}|}{\alpha_r u_{r}}},
+\eeq
+such that $\lambda \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $\lambda \approx \frac{\alpha_{\rm r} c u_{\rm r}}{|\nabla u_{\rm r} |}$  such that $\nabla\cdot \lambda \nabla u_{r} = \nabla \alpha_{\rm r} c u_{\rm r}$ for optically thin regions ($\alpha_{\rm r}$ is a dimensionless coefficient, set to unity in our simulations), $\sigma_{tot}$ is the total opacity, and $c$ is the speed of light.
 
 \section{General Flowchart}
 \label{sec:flowchart}
@@ -89,27 +105,27 @@ This method ensures that energy is distributed among the species correctly in sm
 		\item[getRiemannState]  Calculates and stores Riemann state values at cell interfaces so we can use these to compute fluxes, see MC 4.2.3
 		\begin{itemize}
 			\item Computes the divergence of the velocity field.
-			\item Prepares slope flattening variables that later get used later in PPM: MC 4.2.2 .
+			\item Prepares slope flattening variables that later get used later in PPM: MC 4.2.2 . {\color{red} These currently involve $P_{\rm tot}$.} {\color{blue} Need to replace with $P_{\rm mod} = P_{\rm g} + \lambda E_{\rm r}$}.
 			\item Prepares the vector of variables and calls \textbf{dataReconstOneStep}, which evolves cell-centered values by $\Delta t / 2$ at cell interfaces using PPM characteristic tracing.  Most of this is carried out in the function below.
 			\begin{itemize}
 				\item \textbf{DataReconstructNomralDir\_PPM} The driver of PPM and characteristic tracing.  The steps described are as follows:
 				\begin{enumerate}
-					\item Calculate $\vec{\lambda}$, which is the vector of characteristic speeds.
-					\item Estimates the slope of the primitives and some additional variables at the interfaces by calling \verb!hy_uhd_TVDslope! (see below).  Projects $\bar{\Delta}$ (AKA \verb!delbar!, $delta q$), the estimated slope at each interface, to primitives (?).%  Carries out $U = \frac{1}{2} \left( U_C + U_L -\bar{\Delta}_O  - \bar{\Delta}_N \right)$.  I'm not really sure what this all means.%
+					\item Calculate $\vec{\lambda}$, which is the vector of characteristic speeds. {\color{red} This is described below.  This will change based on the number of variables we have.}
+					\item Estimates the slope of the primitives and some additional variables at the interfaces by calling \verb!hy_uhd_TVDslope! (see below).  Projects $\bar{\Delta}$ (AKA \verb!delbar!, $\delta q$), the estimated slope at each interface, to primitives (?).%  Carries out $U = \frac{1}{2} \left( U_C + U_L -\bar{\Delta}_O  - \bar{\Delta}_N \right)$.  I'm not really sure what this all means.%
 					\item Performs PPM Polynomial interpolation.   Carries out $q_{i+\frac{1}{2}} = \frac{1}{2} \left( q_{i+1} + q_i \right) - \frac{1}{6} \left( \delta q_{i+1} - \delta q_i \right)$, which is equation 66 in MC.  Note that they mention CW equation 1.9, which is equivalent to MC equation 67.  I don't see this done anywhere, however.  I think this might be for some sort of special case or higher order estimate or for use when you have a simpler version of $\delta q$, but I'm really not sure.
 					\item Interpolates species and mass scalars (which we don't use).
 					\item Carries out steepening (which is turned off in the setup we use).
-					\item Flattening.  The flattening coefficent is actually set up in \verb!hy_uhd_getRiemannState! and carried into this function.  Flattening is described in Equations 74-80 in MC.  This is applied to the species first, then to \verb!vecL! and \verb!vecR!, which are the left and right interface values, $q_{i-\frac{1}{2}}$ and $q_{i+\frac{1}{2}}$ in MC notation.  Note that the form of the flattening matrix does involve pressures, so this may be something we need to look at down the road in our changes.  MC equations 70a and 70b are carried out here.
+					\item Flattening.  The flattening coefficent is actually set up in \verb!hy_uhd_getRiemannState! and carried into this function.  Flattening is described in Equations 74-80 in MC.  This is applied to the species first, then to \verb!vecL! and \verb!vecR!, which are the left and right interface values, $q_{i-\frac{1}{2}}$ and $q_{i+\frac{1}{2}}$ in MC notation.  MC equations 70a and 70b are carried out here. 
 					\item Monotonicity Check.  This is equivalent to equations 69a, 69b, and 69c of MC.
-					\item "Take initial guesses for the left and right states."  This calculates $\Delta q_i$ (\verb!delW!) and $q_{6i}$ (\verb!W6!, note the typo in MC; there should not be a $\Delta$ here) as defined in MC Equations 72b and 72c.  I describe these matrices a bit more in Section \ref{sec:characteristic} below.  There are some additional computations relating to the \verb!Wp! and \verb!Wm! arrays in the code.  However, it turns out that all of these changes are overwritten later on, so these are apparently vestigial and not used.  Everything in the sections labeled 7a, 7b, 7c, and 7d in FLASH can be ignored.
+					\item "Take initial guesses for the left and right states."  This calculates $\Delta q_i$ (\verb!delW!) and $q_{6i}$ (\verb!W6!, note the typo in MC; there should not be a $\Delta$ here) as defined in MC Equations 72b and 72c.  I describe these matrices a bit more in Section \ref{sec:characteristic} below.  There are some additional computations relating to the \verb!Wp! and \verb!Wm! arrays in the code.  However, it turns out that all of these changes are overwritten later on, so these are apparently vestigial and not used.  Everything in the sections labeled 7a, 7b, 7c, and 7d in FLASH can be ignored. {\color{red} The $\Delta q_i$ and $q_{6i}$ arrays need to be updated with our new variables.  See \ref{sec:characteristic} for details.}
 					\item "Advance the above interpolated interface values by $\frac{1}{2}$ time step using characteristic Tracing."  I have more detailed notes on what happens during this, but it's similar to MC 4.2.3 .  See Section \ref{sec:characteristic}.
 					\item Finalizes the calculation of Riemann states.  This is described in Section \ref{sec:characteristic}, but it is unclear to me how these equations relate to what is done in MC.  Regardless, we end with what should be the value of all of the primitives at each of the faces a half timestep advanced.
 				\end{enumerate}
 				These functions are called during this:
 				\begin{itemize}
-					\item \textbf{eigenParameters} Calculates several parameters needed for the wave speed eigenvalue calculations.
-					\item \textbf{eigenValue} Calculates the eigenvalues (wave speeds) that fill the eigenvectors.  Fills $\lambda_0$ (see Section \ref{sec:characteristic}).
-					\item \textbf{eigenVector} Fills the $\mathbf{L}$ and $\mathbf{R}$ eigenvectors in primative or conservative form (see Section \ref{sec:characteristic}). 
+					\item \textbf{eigenParameters} Calculates several parameters needed for the wave speed eigenvalue calculations. {\color{red} These need to be replaced with the appropriate adjusted parameters for the eigenvalues.  See Section \ref{sec:characteristic}.}
+					\item \textbf{eigenValue} Calculates the eigenvalues (wave speeds) that fill the eigenvectors.  Fills $\lambda_0$ (see Section \ref{sec:characteristic}).  {\color{red} These need to be replaced with the appropriate adjusted values.  Some of these fixeswill take place in \verb!eigenValue!.  See Section \ref{sec:characteristic}.}
+					\item \textbf{eigenVector} Fills the $\mathbf{L}$ and $\mathbf{R}$ eigenvectors in primative or conservative form (see Section \ref{sec:characteristic}). {\color{red} These need to be replaced with the appropriate for the eigenvectors.  See Section \ref{sec:characteristic}.} 
 					\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way." (sic)  ???  See Section 3 of MC, especially Section 3.2.  This computes \verb!sig!, the "transverse flux vector."
 					\item \textbf{TVDslope} "This routine calculates limited slopes depending on the user's choice of the slope limiter."  We use a \verb!minmod! slope limiter.  \verb!delbar! (the vector $\bar{\Delta}$) is returned, which contains the limited slopes for primitive variables + \verb!gamc!, \verb!game!, and gravity.  It is similar to, but not the same as some of the slope limiters described on pages 46 and 47 of MC.
 				\end{itemize}
@@ -117,8 +133,8 @@ This method ensures that energy is distributed among the species correctly in sm
 			\item Applies geometric terms.  Not needed for Cartesian.
 			\item Updates Gravity.  It looks like they're just adding in the last term of MC 53.
 			\item Stores scratch terms for each direction.
-			\item Applies transverse correction terms for 3D.  \verb!hy_use3dFullCTU! is turned on in our code.  I believe this has something to do with what's going on in Sections 3.2 and 3.3 of MC, but I haven't walked through this line by line yet.  The bulk of this seems to be handled by the next function call below.
-			\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unspit way."  This is also called above, inside the PPM solver.  I don't understand why this is called in two separate places here.
+			\item Applies transverse correction terms for 3D.  \verb!hy_use3dFullCTU! is turned on in our code.  The bulk of this seems to be handled by the next function call below.
+			\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way."  This is also called above, inside the PPM solver.  I don't understand why this is called in two separate places here.
 		\end{itemize}
 		\item[getFaceFlux] Computes fluxes at cell faces.  Also calls specific solvers (e.g. \textbf{HLL}).  Calculates min timestep and alters fluxes for artificial viscosity.
 		\begin{itemize}
@@ -126,14 +142,14 @@ This method ensures that energy is distributed among the species correctly in sm
 			\begin{enumerate}
 				\item Converts primitives to conserved variables for left and right states.\\
 				\textbf{prim2con} Calculates conversions from primitive to conserved variables.  The conserved variables are $\rho, \rho \vec{v}, E_{\rm tot}$ \\
-				\textbf{prim2flx} Converts from variables to fluxes.  $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$.
+				\textbf{prim2flx} Converts from variables to fluxes.  {\color{red} $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$} {\color{blue} Replace with $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$ ????}
 				\item Calculates $F^* = \left[ S_R F_L - S_L F_R + S_R S_L (U_R - U_L) \right]/(S_R-S_L)$
 			\end{enumerate}
 		\end{itemize}
 		\item[unsplitUpdate] Given the fluxes, updates the conserved, cell-centered quantities.  This is responsible for getting all the variables and geometric terms in the right form so it can call two subfunctions that are present in this file.
 		\begin{itemize}
 			\item \textbf{updateConservedVariable} Computes $U = U-\frac{\Delta t}{\Delta x}\left( F_R - F_L \right)$.  See equations 53 and 63a in MC?
-			\item \textbf{updateInternalEnergy} When flag \verb!hy_useAuxEintEqn! is set, computes $\epsilon = \epsilon + \frac{\Delta t}{\Delta x} \left( F_L - F_R + P (F_L - F_R) \right)$.
+			\item \textbf{updateInternalEnergy} When flag \verb!hy_useAuxEintEqn! is set, computes $\epsilon = \epsilon + \frac{\Delta t}{\Delta x} \left( F_L - F_R + P (F_L - F_R) \right)$.  This is turned on by default in our simulations.
 		\end{itemize}
 		\item[multiTemp/unsplitUpdateMultiTemp] Updates energies for the special 3T conditions.  See Section \ref{sec:hydro} and the FLASH manual for more information on the "Rage-like" approach used here.  Some of the weird uhd crashes I've seen occur here.  There are comments that explicitly state these crashes occur for "unknown reasons."
 		\begin{itemize}
@@ -141,13 +157,13 @@ This method ensures that energy is distributed among the species correctly in sm
 		\end{itemize}
 		
 		\item[energyFix] Corrects energy in cases where the total energy is advected and \verb!eint! can become negative.  In the three temperature case, this step is actually handled by \textbf{unsplitUpdateMultiTemp}.
-		\item[Grid\_putFluxData] " Put the fluxes in a direction specified by axis for boundary cells for block blockID. This routine needs to be used with adaptive mesh since fluxes calculated by the two blocks that are at fine/coarse boundary have different accuracy. The fluxes calculated by individual blocks are reported to  the Grid through this call. Once that is done, a call to Grid_conserveFluxes applies the flux conservation algorithm to make it consistent across the fine/coarse boundaries."
-		\item[Grid\_conserveFluxes]
+		\item[Grid\_putFluxData] "Put the fluxes in a direction specified by axis for boundary cells for block blockID. This routine needs to be used with adaptive mesh since fluxes calculated by the two blocks that are at fine-coarse boundary have different accuracy. The fluxes calculated by individual blocks are reported to  the Grid through this call. Once that is done, a call to \verb!Grid_conserveFluxes! applies the flux conservation algorithm to make it consistent across the fine-coarse boundaries."
+		\item[Grid\_conserveFluxes] Corrects fluxes across fine-course resolution boundaries.  See above.
 		\item[Eos\_wrapped]
 		\item[putGravityUnsplit]
 		\item[addGravityUnsplit]
 		\item[energyFix]
-		\item[multiTempAfter] This is only needed for when you are using MHD and three temperature, I think.
+		\item[multiTempAfter] This is only needed for when you are using MHD and three temperature.
 
 	
 	\end{description}
@@ -155,22 +171,23 @@ This method ensures that energy is distributed among the species correctly in sm
 
 \section{Characteristic Tracing}
 \label{sec:characteristic}
-These are equations I was able to decipher from \verb!hy_uhdDataREconstructNormalDir_PPM!.  I'm going to focus on step $8$, characteristic tracing, which is similar to MC section 4.2.3 .
+These are equations I was able to decipher from \verb!hy_uhdDataREconstructNormalDir_PPM!.  I'm going to focus on step $8$, characteristic tracing, which is similar to MC Section 4.2.3 .
 
 \beq
-\mathbf{\lambda}_0 = \begin{pmatrix}v_x - c\\v_x \\ v_x \\ v_x \\ v_x + c\end{pmatrix}
+{\color{red}\mathbf{\lambda}_0 = \begin{pmatrix}v - c\\v \\ v \\ v \\ v + c\end{pmatrix}}{\color{blue}\mathbf{\lambda}_0 = \begin{pmatrix}v - c_{\rm r}\\v \\ v \\ v \\ v \\ v + c_{\rm r}\end{pmatrix}}
 \eeq
-Where $c$ is sound speed.  This is computed in the \verb!hy_uhd_eigenValue! function.  This is the variable \verb!lambda0! in the code and known as $\Lambda$ in MC.  
+Where $c$ is sound speed and $c_{\rm r}=\sqrt{\gamma \frac{P_{\rm g}{\rho} + (\lambda + 1)\frac{\lambda E_{\rm r}}{\rho}}$ is the radiation modified sound speed.  {\color{blue}Note: I'm a little confused about the order of these values in the new version.}  This is computed in the \verb!hy_uhd_eigenValue! function.  This is the variable \verb!lambda0! in the code and known as $\Lambda$ in MC.  
 
 Our vector of primitive variables is
 \beq
-\mathbf{Q} = \begin{pmatrix}\rho\\v_x \\ v_y \\ v_z \\ P
-\end{pmatrix},
+{\color{red}\mathbf{Q} = \begin{pmatrix}\rho\\v_x \\ v_y \\ v_z \\ P\end{pmatrix}} {\color{blue}\mathbf{Q} = \begin{pmatrix}\rho\\v_x \\ v_y \\ v_z \\ P_{\rm gas} \\ E_{\rm r}\end{pmatrix}}
+,
 \eeq
 where $P$ is the total pressure.
 
 The left eigenvector (variable \verb!leig0!)  as defined in \verb!hy_uhd_eigenVector! is
 \beq
+{\color{red}
 \mathbf{L} = 
 \begin{pmatrix}
 0 & 0 & 1 & 0 & 0 \\
@@ -179,10 +196,22 @@ The left eigenvector (variable \verb!leig0!)  as defined in \verb!hy_uhd_eigenVe
 0 & 0 & 0 & \rho & 0 \\
 \frac{1}{2 \rho c^2} & 0 & \frac{1}{c} & 0 & \frac{1}{2 \rho c^2}
 \end{pmatrix}
+}
+{\color{blue}
+\mathbf{L} = 
+\begin{pmatrix}
+0 & 0 & 1 & 0 \\
+-\frac{\rho}{2c_{\rm r}}  & 0 & 0 & \frac{\rho}{2 c_{\rm r}} \\
+\frac{1}{2 c_{\rm r}^2}& -(\lambda + 1) \frac{E_{\rm r}}{\rho c_{\rm r}^2}& -\frac{1}{c_{\rm r}^2}&\frac{1}{2c_{\rm r}^2} \\
+\frac{\lambda}{2 c_{\rm r}^2}& c^2 c_{\rm r}^2& -\frac{\lambda}{c_{\rm r}^2}&\frac{\lambda}{2 c_{\rm r}^2}
+\end{pmatrix}
+}
 \eeq
+{\color{blue} This new version is the exact version from Z11.  However, they only talk about doing this with one velocity component, so their numbers of elements are different.  We need to consider how to get this to work with our array of variables..?}
 
 The right eigenvector (variable \verb!reig0!) is
 \beq
+{\color{red}
 \mathbf{R} = 
 \begin{pmatrix}
 \rho & 0 & 1 & 0 & \rho \\
@@ -191,6 +220,18 @@ The right eigenvector (variable \verb!reig0!) is
 0 & 0 & 0 & \frac{1}{\rho} & 0 \\
 \rho c^2 & 0 & 0 & 0 & \rho c^2
 \end{pmatrix}
+}
+{\color{blue}
+\mathbf{R} = 
+\begin{pmatrix}
+\rho & 0 & 1 & 0 & \rho \\
+-c & 0 & 0 & 0 & c \\
+0 & 0 & -\frac{1}{\rho} & 0 & 0 \\
+0 & 0 & 0 & \frac{1}{\rho} & 0 \\
+\rho c^2 & 0 & 0 & 0 & \rho c^2
+\end{pmatrix}
+}
+
 \eeq
 
 The array \verb!delW! is
