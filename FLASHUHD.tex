@@ -41,6 +41,8 @@ Most of the files relevant to the unsplit solver are in \\
 
 Any file or directory names I mention will be relative to this directory.
 
+Items highlighted in {\color{red}red} indicate that they are going to be replaced by our new changes, indicated in {\color{blue}blue}.
+
 Section \ref{sec:hydro} describes the basic equations of radiation hydrodynamics that FLASH is trying to solve.  Section \ref{sec:flowchart} contains a basic overview flowchart of how the solver works.  There are some brief descriptions of select files as well.
 
 \section{FLASH Multispecies Hydrodynamics}
@@ -48,20 +50,35 @@ Section \ref{sec:hydro} describes the basic equations of radiation hydrodynamics
 The basic equations of hydrodynamics solved by the FLASH multispecies solver are mass conservation
 \beq 
 \label{eq:e1}
-\partial_t \rho + \nabla \cdot (\rho \mathbf{v}) = 0, 
+\frac{\partial \rho}{\partial t} + \nabla \cdot (\rho \mathbf{v}) = 0, 
 \eeq
 momentum conservation
 {\color{red}
 \beq
 \label{eq:e2}
-\partial_t (\rho\mathbf{v}) + \nabla \cdot (\rho\mathbf{v}\mathbf{v}) + \nabla P_{\rm tot} = 0,
+\frac{\partial \rho\mathbf{v}}{\partial t} + \nabla \cdot (\rho\mathbf{v}\mathbf{v}) + \nabla P_{\rm tot} = 0,
+\eeq
+}
+{\color{blue}
+\beq
+\label{eq:newmom}
+\frac{\partial \rho\mathbf{v}}{\partial t} + \nabla \cdot (\rho\mathbf{v}\mathbf{v}) + \nabla P_{\rm tot} - \frac{\lambda}{3} \nabla P_{\rm r}= 0,
 \eeq
 }
 total energy conservation,
-\beq
-\label{eq:e3}
-\partial_t (\rho E_{\rm tot}) + \nabla \cdot \left[ \left( \rho E_{\rm tot} + P_{\rm tot} \right) \mathbf{v} \right] = 0,
-\eeq
+\bea
+{\color{red}
+	\label{eq:e3}
+	\frac{\partial E_{\rm tot}}{\partial t} + \nabla \cdot \left[ \left( \rho E_{\rm tot} + P_{\rm tot} \right) \mathbf{v} \right] = 0,
+}\\
+{\color{blue}
+	\label{eq:e3}
+	\frac{\partial E_{\rm gas+kin}}{\partial t} + \nabla \cdot \left[ \left( \rho E_{\rm gas+kin} + P_{\rm gas} \right) \mathbf{v} \right] + \lambda v \cdot E_{\rm r} = 0,
+}\\
+{\color{blue}
+	\frac{\partial E_{\rm r}}{\partial t} - \lambda v \cdot E_{\rm r} = 0,
+}
+\eea
 and the individual equations for internal energy advection.  In the three temperature, radiation hydrodynamics unit of FLASH, energy advection is split into three equations, one for each species
 \bea 
 \label{eq:e4}
@@ -110,7 +127,7 @@ such that $\lambda \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions 
 			\begin{itemize}
 				\item \textbf{DataReconstructNomralDir\_PPM} The driver of PPM and characteristic tracing.  The steps described are as follows:
 				\begin{enumerate}
-					\item Calculate $\vec{\lambda}$, which is the vector of characteristic speeds. {\color{red} This is described below.  This will change based on the number of variables we have.}
+					\item Calculate $\boldsymbol{\lambda}_0$, which is the vector of characteristic speeds. {\color{red} See Section \ref{sec:characteristic} for the changes to this.}
 					\item Estimates the slope of the primitives and some additional variables at the interfaces by calling \verb!hy_uhd_TVDslope! (see below).  Projects $\bar{\Delta}$ (AKA \verb!delbar!, $\delta q$), the estimated slope at each interface, to primitives (?).%  Carries out $U = \frac{1}{2} \left( U_C + U_L -\bar{\Delta}_O  - \bar{\Delta}_N \right)$.  I'm not really sure what this all means.%
 					\item Performs PPM Polynomial interpolation.   Carries out $q_{i+\frac{1}{2}} = \frac{1}{2} \left( q_{i+1} + q_i \right) - \frac{1}{6} \left( \delta q_{i+1} - \delta q_i \right)$, which is equation 66 in MC.  Note that they mention CW equation 1.9, which is equivalent to MC equation 67.  I don't see this done anywhere, however.  I think this might be for some sort of special case or higher order estimate or for use when you have a simpler version of $\delta q$, but I'm really not sure.
 					\item Interpolates species and mass scalars (which we don't use).
@@ -142,7 +159,7 @@ such that $\lambda \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions 
 			\begin{enumerate}
 				\item Converts primitives to conserved variables for left and right states.\\
 				\textbf{prim2con} Calculates conversions from primitive to conserved variables.  The conserved variables are $\rho, \rho \vec{v}, E_{\rm tot}$ \\
-				\textbf{prim2flx} Converts from variables to fluxes.  {\color{red} $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$} {\color{blue} Replace with $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$ ????}
+				\textbf{prim2flx} Converts from variables to fluxes.  {\color{red} $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$} {\color{blue} WE NEED TO DECIDE THE EXACT FORM OF THE FLUX TERMS TO REPLACE THESE WITH.}
 				\item Calculates $F^* = \left[ S_R F_L - S_L F_R + S_R S_L (U_R - U_L) \right]/(S_R-S_L)$
 			\end{enumerate}
 		\end{itemize}
@@ -173,17 +190,53 @@ such that $\lambda \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions 
 \label{sec:characteristic}
 These are equations I was able to decipher from \verb!hy_uhdDataREconstructNormalDir_PPM!.  I'm going to focus on step $8$, characteristic tracing, which is similar to MC Section 4.2.3 .
 
-\beq
-{\color{red}\mathbf{\lambda}_0 = \begin{pmatrix}v - c\\v \\ v \\ v \\ v + c\end{pmatrix}}{\color{blue}\mathbf{\lambda}_0 = \begin{pmatrix}v - c_{\rm r}\\v \\ v \\ v \\ v \\ v + c_{\rm r}\end{pmatrix}}
-\eeq
-Where $c$ is sound speed and $c_{\rm r}=\sqrt{\gamma \frac{P_{\rm g}{\rho} + (\lambda + 1)\frac{\lambda E_{\rm r}}{\rho}}$ is the radiation modified sound speed.  {\color{blue}Note: I'm a little confused about the order of these values in the new version.}  This is computed in the \verb!hy_uhd_eigenValue! function.  This is the variable \verb!lambda0! in the code and known as $\Lambda$ in MC.  
+The equations of our hyperbolic system are
+\bea
+{\color{blue}
+	\frac{\partial \rho}{\partial t} + \nabla \cdot (\rho v) = 0,
+} \\
+{\color{blue}
+	\frac{\partial (\rho v)}{\partial t} + \nabla \cdot (\rho v v) + \nabla P_{\rm gas} + \lambda \nabla E_{\rm r} = 0,
+} \\
+{\color{blue}
+	\frac{\partial E_{\rm gas+kin}}{\partial t} + \nabla \cdot \left[ \left( \rho E_{\rm gas+kin} + P_{\rm gas} \right) \mathbf{v} \right] + \lambda v \cdot E_{\rm r} = 0,
+} \\
+{\color{blue}
+	\frac{\partial E_{\rm r}}{\partial t} - \lambda v \cdot E_{\rm r} = 0.
+}
+\eea
 
 Our vector of primitive variables is
 \beq
-{\color{red}\mathbf{Q} = \begin{pmatrix}\rho\\v_x \\ v_y \\ v_z \\ P\end{pmatrix}} {\color{blue}\mathbf{Q} = \begin{pmatrix}\rho\\v_x \\ v_y \\ v_z \\ P_{\rm gas} \\ E_{\rm r}\end{pmatrix}}
-,
+{\color{red}\mathbf{Q} = \begin{pmatrix}\rho\\v_x \\ v_y \\ v_z \\ P_{\rm tot}\end{pmatrix}} {\color{blue}\mathbf{Q} = \begin{pmatrix}\rho\\v_x \\ v_y \\ v_z \\ P_{\rm gas} \\ E_{\rm r}\end{pmatrix}}.
 \eeq
-where $P$ is the total pressure.
+
+Z11 linearizes the the Euler equations via
+\beq
+\frac{\partial q}{\partial t} + \mathbf{A} \frac{\partial q}{\partial x} = s.
+\eeq
+I believe our version of $\mathbf{A}$ is
+\beq
+{
+	\color{blue}
+	\mathbf{A} = 
+	\begin{pmatrix}
+	v & rho & 0 & 0 & 0 & 0 \\
+	0 & u & 0 & 0 & \frac{1}{\rho} & \frac{\lambda}{rho} \\
+	0 & 0 & v & 0 & 0 & 0 \\
+	0 & 0 & 0 & v & 0 & 0 \\
+	0 & \gamma P_{\rm gas} & 0 & 0 & v & 0 \\
+	0 & 0 & 0 & 0 & 0 & -\lambda v
+	\end{pmatrix}
+}
+\eeq
+{\color{blue} Note that I have removed the Eddington factor terms from this.}
+
+Our vector of eigenvalues is
+\beq
+{\color{red}\boldsymbol{\lambda}_0 = \begin{pmatrix}v - c\\v \\ v \\ v \\ v + c\end{pmatrix}}{\color{blue}\boldsymbol{\lambda}_0 = \begin{pmatrix}v - c_{\rm r}\\v \\ v \\ v \\ v \\ v + c_{\rm r}\end{pmatrix}}
+\eeq
+Where $c$ is sound speed and $c_{\rm r}=\sqrt{\gamma \frac{P_{\rm g}}{\rho} + (\lambda + 1)\frac{\lambda E_{\rm r}}{\rho}}$ is the radiation modified sound speed.  {\color{blue}Note: I'm a little confused about the order of these values in the new version.  Z11 presents these in a different ordering than Z13.}  This is computed in the \verb!hy_uhd_eigenValue! function.  This is the variable \verb!lambda0! in the code and known as $\Lambda$ in MC.
 
 The left eigenvector (variable \verb!leig0!)  as defined in \verb!hy_uhd_eigenVector! is
 \beq
@@ -207,7 +260,7 @@ The left eigenvector (variable \verb!leig0!)  as defined in \verb!hy_uhd_eigenVe
 \end{pmatrix}
 }
 \eeq
-{\color{blue} This new version is the exact version from Z11.  However, they only talk about doing this with one velocity component, so their numbers of elements are different.  We need to consider how to get this to work with our array of variables..?}
+{\color{blue} This new version is the exact version from Z11.  However, they only talk about doing this in one dimension, so their numbers of elements are different.  We need to consider how to get this to work with our array of variables, which differ in that our $\mathbf{Q}$ contains all of the velocity components, whereas Z11 only carries the one velocity component for the direction being considered.}
 
 The right eigenvector (variable \verb!reig0!) is
 \beq
@@ -221,18 +274,8 @@ The right eigenvector (variable \verb!reig0!) is
 \rho c^2 & 0 & 0 & 0 & \rho c^2
 \end{pmatrix}
 }
-{\color{blue}
-\mathbf{R} = 
-\begin{pmatrix}
-\rho & 0 & 1 & 0 & \rho \\
--c & 0 & 0 & 0 & c \\
-0 & 0 & -\frac{1}{\rho} & 0 & 0 \\
-0 & 0 & 0 & \frac{1}{\rho} & 0 \\
-\rho c^2 & 0 & 0 & 0 & \rho c^2
-\end{pmatrix}
-}
-
 \eeq
+{\color{blue} As above, we need to fix this for our new $\mathbf{A}$ and  expand this for our values of $\mathbf{Q}$, which includes all velocity components}.
 
 The array \verb!delW! is
 \beq
