@@ -62,7 +62,7 @@ momentum conservation
 {\color{blue}
 \beq
 \label{eq:newmom}
-\frac{\partial \rho\mathbf{v}}{\partial t} + \nabla \cdot (\rho\mathbf{v}\mathbf{v}) + \nabla P_{\rm tot} - \frac{\lambda}{3} \nabla P_{\rm r}= 0,
+\frac{\partial \rho\mathbf{v}}{\partial t} + \nabla \cdot (\rho\mathbf{v}\mathbf{v}) + \nabla P_{\rm gas} + \frac{\lambda}{3} \nabla P_{\rm r}= 0,
 \eeq
 }
 total energy conservation,
@@ -103,8 +103,10 @@ FLASH then calculates the changes in total energy due to hydrodynamic work and s
   \item The change in specific internal energy due to hydrodynamic work and shock heating is calculated via $\Delta \epsilon^{\rm work}_{\rm tot} + \Delta \epsilon^{\rm shock}_{\rm tot} = \Delta \epsilon_{\rm tot} - \Delta \epsilon_{\rm tot}^{\rm adv}$, where $\Delta \epsilon_{\rm tot}^{\rm adv}$ is the change in specific internal energy solely due to advection.
   \item The energy $\Delta \epsilon^{\rm work}_{\rm tot} + \Delta \epsilon^{\rm shock}_{\rm tot}$ is distributed evenly among all three species according to the ratio of their pressures.
 \end{enumerate}
-This method ensures that energy is distributed among the species correctly in smooth flows, but may fail to do so near shocks\footnote{For further justification and explanation of radiation hydrodynamics unit in FLASH, consult the FLASH Users Guide version 4 available at http://flash.uchicago.edu/.}.  By advecting each species separately, we are able to maintain separate temperatures for the gas and radiation.  The equations above do not account for energy gains or losses from radiative diffusion, radiation-matter coupling, gravity, or artificial heating source terms.  These components are carried out operator-split from the equations above.
-}
+This method ensures that energy is distributed among the species correctly in smooth flows, but may fail to do so near shocks\footnote{For further justification and explanation of radiation hydrodynamics unit in FLASH, consult the FLASH Users Guide version 4 available at http://flash.uchicago.edu/.}.  By advecting each species separately, we are able to maintain separate temperatures for the gas and radiation.} {\color{blue} CASTRO seems to avoid this issue entirely by computing radiation and gas fluxes instead of the total fluxes.  The formulation of their equations do not include the problematic $\nabla \cdot \mathbf{v}$ terms.}
+
+The equations above do not account for energy gains or losses from radiative diffusion, radiation-matter coupling, gravity, or artificial heating source terms.  These components are carried out operator-split from the equations above.
+
 
 If we include opacity effects in the low optical depth limits, the complete momentum equation should be
 {\color{blue}
@@ -160,24 +162,28 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 			\item Applies transverse correction terms for 3D.  \verb!hy_use3dFullCTU! is turned on in our code.  The bulk of this seems to be handled by the next function call below.
 			\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way."  This is also called above, inside the PPM solver.  I don't understand why this is called in two separate places here.
 		\end{itemize}
-		\item[getFaceFlux] Computes fluxes at cell faces.  Also calls specific solvers (e.g. \textbf{HLL}).  Calculates min timestep and alters fluxes for artificial viscosity.
+		\item[getFaceFlux] Computes fluxes at cell faces.  Also calls specific solvers (e.g. \textbf{HLL}).  Calculates min timestep and alters fluxes for artificial viscosity. {\color{blue} There are some calculations related to \verb!updateInternalEnergy! that need to be adjusted here.  Some fluxes are calculated here, not just in \verb!prim2flx! below.}
 		\begin{itemize}
 			\item \textbf{HLL} This is the most stable solver we've been using.  It's in charge of computing the high-order Godunov fluxes based on the L and R Riemann states.
 			\begin{enumerate}
-				\item Converts primitives to conserved variables for left and right states.\\
-				\textbf{prim2con} Calculates conversions from primitive to conserved variables.  The conserved variables are $\rho, \rho \vec{v}, E_{\rm tot}$ \\
-				\textbf{prim2flx} Converts from variables to fluxes.  {\color{red} $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$} {\color{blue} WE NEED TO DECIDE THE EXACT FORM OF THE FLUX TERMS TO REPLACE THESE WITH.}
-				\item Calculates $F^* = \left[ S_R F_L - S_L F_R + S_R S_L (U_R - U_L) \right]/(S_R-S_L)$
+				\item Calculates sound speed: {\color{red} $c^2 = \frac{\gamma P}{\rho}$} {\color{blue} Replace with $c_{\rm r}$???}
+				\item \textbf{prim2con} Calculates conversions from primitive to conserved variables.  The conserved variables are $\rho, \rho \vec{v}, E_{\rm tot}$ \\
+				\item \textbf{prim2flx} Converts from variables to fluxes.  {\color{red} $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$} {\color{blue} We need to decide which fluxes to place here.  Most likely: replace total energy flux with radiation energy and gas energy fluxes.}
+				\item Left and right state logic.  Calculates $F^* = \left[ S_R F_L - S_L F_R + S_R S_L (U_R - U_L) \right]/(S_R-S_L)$ in the case of rarefaction waves...?
 			\end{enumerate}
 		\end{itemize}
 		\item[unsplitUpdate] Given the fluxes, updates the conserved, cell-centered quantities.  This is responsible for getting all the variables and geometric terms in the right form so it can call two subfunctions that are present in this file.
 		\begin{itemize}
 			\item \textbf{updateConservedVariable} Computes $U = U-\frac{\Delta t}{\Delta x}\left( F_R - F_L \right)$.  See equations 53 and 63a in MC?
-			\item \textbf{updateInternalEnergy} When flag \verb!hy_useAuxEintEqn! is set, computes $\epsilon = \epsilon + \frac{\Delta t}{\Delta x} \left( F_L - F_R + P (F_L - F_R) \right)$.  This is turned on by default in our simulations.
+			\item \textbf{updateInternalEnergy} When flag \verb!hy_useAuxEintEqn! is set, computes 
+			\beq
+			\rho \epsilon = \rho \epsilon + \frac{\Delta t}{\Delta x} \left( eF_L - eF_R + P (PF_L - PF_R) \right).
+			\eeq
+			This is turned on by default in our simulations.
 		\end{itemize}
-		\item[multiTemp/unsplitUpdateMultiTemp] Updates energies for the special 3T conditions.  See Section \ref{sec:hydro} and the FLASH manual for more information on the "Rage-like" approach used here.  Some of the weird uhd crashes I've seen occur here.  There are comments that explicitly state these crashes occur for "unknown reasons."
+		{\color{red}\item[multiTemp/unsplitUpdateMultiTemp] Updates energies for the special 3T conditions.  See Section \ref{sec:hydro} and the FLASH manual for more information on the "Rage-like" approach used here.  Some of the weird uhd crashes I've seen occur here.  There are comments that explicitly state these crashes occur for "unknown reasons."}
 		\begin{itemize}
-			\item \textbf{hy\_uhd\_ragelike} FLASH then calculates the changes in total energy due to hydrodynamic work and shock heating and distributes this energy among the species according to the ratios of pressures in a "RAGE-like" approach.  See Section \ref{sec:hydro}.  Calls \textbf{hy\_uhd\_getPressure} and \textbf{Hydro\_recalibrateEints}.
+			{\color{red} \item \textbf{hy\_uhd\_ragelike} FLASH then calculates the changes in total energy due to hydrodynamic work and shock heating and distributes this energy among the species according to the ratios of pressures in a "RAGE-like" approach.  See Section \ref{sec:hydro}.  Calls \textbf{hy\_uhd\_getPressure} and \textbf{Hydro\_recalibrateEints}.} {\color{blue} We may not need this at all if we flux radiation and gas energy instead of total energy.  See Section \ref{sec:hydro}.}
 		\end{itemize}
 		
 		\item[energyFix] Corrects energy in cases where the total energy is advected and \verb!eint! can become negative.  In the three temperature case, this step is actually handled by \textbf{unsplitUpdateMultiTemp}.
@@ -209,7 +215,7 @@ The equations of our hyperbolic system are
 	\frac{\partial E_{\rm gas+kin}}{\partial t} + \nabla \cdot \left[ \left( \rho E_{\rm gas+kin} + P_{\rm gas} \right) \mathbf{v} \right] + \lambda v \cdot E_{\rm r} = 0,
 } \\
 {\color{blue}
-	\frac{\partial E_{\rm r}}{\partial t} - \lambda v \cdot E_{\rm r} = 0.
+	\frac{\partial E_{\rm r}}{\partial t} + \nabla \cdot \left( \frac{3-f}{2} E_{\rm r} v \right) - \lambda v \cdot E_{\rm r} = 0.
 }
 \eea
 
@@ -233,11 +239,10 @@ I believe our version of $\mathbf{A}$ is
 	0 & 0 & v & 0 & 0 & 0 \\
 	0 & 0 & 0 & v & 0 & 0 \\
 	0 & \gamma P_{\rm gas} & 0 & 0 & v & 0 \\
-	0 & 0 & 0 & 0 & 0 & -\lambda v
+	0 & \frac{3-f}{2} E_{\rm r} & 0 & 0 & 0 & -\lambda v
 	\end{pmatrix}
 }
 \eeq
-{\color{blue} Note that I have removed the Eddington factor terms from this.}
 
 Our vector of eigenvalues is
 \beq
