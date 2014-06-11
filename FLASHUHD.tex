@@ -76,20 +76,26 @@ total energy conservation,
 	\frac{\partial E_{\rm gas+kin}}{\partial t} + \nabla \cdot \left[ \left( \rho E_{\rm gas+kin} + P_{\rm gas} \right) \mathbf{v} \right] + \lambda v \cdot E_{\rm r} = 0,
 }\\
 {\color{blue}
-	\frac{\partial E_{\rm r}}{\partial t} - \lambda v \cdot E_{\rm r} = 0,
+	\frac{\partial E_{\rm r}}{\partial t} + \nabla \cdot \left( \frac{3-f}{2} E_{\rm r} v \right)- \lambda v \cdot E_{\rm r} = 0,
 }
 \eea
-and the individual equations for internal energy advection.  In the three temperature, radiation hydrodynamics unit of FLASH, energy advection is split into three equations, one for each species
+and the individual equations for internal energy advection.  {\color{red}In the three temperature, radiation hydrodynamics unit of FLASH, energy advection is split into three equations, one for each species
 \bea 
-\label{eq:e4}
-\partial_t (\rho \epsilon_{\rm ele}) + \nabla \cdot [\rho \epsilon_{\rm ele} \mathbf{v}] = 0, \\
-\label{eq:e5}
-\partial_t (\rho \epsilon_{\rm ion}) + \nabla \cdot [\rho \epsilon_{\rm ion} \mathbf{v}] = 0, \\
-\label{eq:e6}
-\partial_t (\rho \epsilon_{\rm rad}) + \nabla \cdot [\rho \epsilon_{\rm rad} \mathbf{v}] = 0.
+\frac{\partial \rho \epsilon_{\rm ele}}{\partial t} + \nabla \cdot [\rho \epsilon_{\rm ele} \mathbf{v}] + P_{\rm ele} \nabla \cdot \mathbf{v} = 0, \\
+\frac{\partial \rho \epsilon_{\rm ion}}{\partial t} + \nabla \cdot [\rho \epsilon_{\rm ion} \mathbf{v}] + P_{\rm ion} \nabla \cdot \mathbf{v} = 0, \\
+\frac{\partial \rho \epsilon_{\rm rad}}{\partial t} + \nabla \cdot [\rho \epsilon_{\rm rad} \mathbf{v}] + P_{\rm rad} \nabla \cdot \mathbf{v} = 0.
 \eea
 Note that we do not include terms involving radiation diffusion or radiation-matter coupling via opacity here.  These terms are present in FLASH, but carried out in an operator-split fashion from the hydrodynamics, and solved in a different unit.
 
+For the "RAGE-like" approach, FLASH first considers the three split energy advection equations without the work terms
+\bea 
+\label{eq:e4}
+\frac{\partial \rho \epsilon_{\rm ele}}{\partial t} + \nabla \cdot [\rho \epsilon_{\rm ele} \mathbf{v}] = 0, \\
+\label{eq:e5}
+\frac{\partial \rho \epsilon_{\rm ion}}{\partial t} + \nabla \cdot [\rho \epsilon_{\rm ion} \mathbf{v}] = 0, \\
+\label{eq:e6}
+\frac{\partial \rho \epsilon_{\rm rad}}{\partial t} + \nabla \cdot [\rho \epsilon_{\rm rad} \mathbf{v}] = 0.
+\eea
 FLASH then calculates the changes in total energy due to hydrodynamic work and shock heating and distributes this energy among the species according to the ratios of pressures in a "RAGE-like" approach \citep{Gittings:08}.  This is carried out in four steps:
 \begin{enumerate}
   \item Equations \ref{eq:e1}, \ref{eq:e2}, \ref{eq:e3}, \ref{eq:e4}, \ref{eq:e5}, and \ref{eq:e6} are evolved simultaneously and internal energies are updated to reflect changes due to advection.
@@ -98,6 +104,7 @@ FLASH then calculates the changes in total energy due to hydrodynamic work and s
   \item The energy $\Delta \epsilon^{\rm work}_{\rm tot} + \Delta \epsilon^{\rm shock}_{\rm tot}$ is distributed evenly among all three species according to the ratio of their pressures.
 \end{enumerate}
 This method ensures that energy is distributed among the species correctly in smooth flows, but may fail to do so near shocks\footnote{For further justification and explanation of radiation hydrodynamics unit in FLASH, consult the FLASH Users Guide version 4 available at http://flash.uchicago.edu/.}.  By advecting each species separately, we are able to maintain separate temperatures for the gas and radiation.  The equations above do not account for energy gains or losses from radiative diffusion, radiation-matter coupling, gravity, or artificial heating source terms.  These components are carried out operator-split from the equations above.
+}
 
 If we include opacity effects in the low optical depth limits, the complete momentum equation should be
 {\color{blue}
@@ -106,11 +113,11 @@ If we include opacity effects in the low optical depth limits, the complete mome
 \partial_t (\rho\mathbf{v}) + \nabla \cdot (\rho\mathbf{v}\mathbf{v}) + \nabla P_{\rm tot} - \frac{\lambda}{3} \nabla P_{\rm r}= 0,
 \eeq
 }
-where $P_{\rm m} = P_{\rm e} + P_{\rm i}$ is the matter (electron $+$ ion) pressure, $\lambda$ is the flux limiter, and $P_{\rm r}$ is the radiation pressure.  Note that we are working in the non-relativistic limit and ignoring terms of $\mathcal{O}(\frac{v}{C})$.  We also do not implement a variable Eddington factor, a key difference from Z11.  The flux limiter used in flash is
+where $P_{\rm m} = P_{\rm e} + P_{\rm i}$ is the matter (electron $+$ ion) pressure, $\lambda$ is the flux limiter, and $P_{\rm r}$ is the radiation pressure.  Note that we are working in the non-relativistic limit and ignoring terms of $\mathcal{O}(\frac{v}{C})$.  We also do not implement a variable Eddington factor, a key difference from Z11.  The diffusion coefficient used in flash is
 \beq
-\lambda = \frac{c}{3\sigma_{tot} + \frac{|\nabla u_{r}|}{\alpha_r u_{r}}},
+D = \frac{c}{3\sigma_{tot} + \frac{|\nabla u_{r}|}{\alpha_r u_{r}}},
 \eeq
-such that $\lambda \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $\lambda \approx \frac{\alpha_{\rm r} c u_{\rm r}}{|\nabla u_{\rm r} |}$  such that $\nabla\cdot \lambda \nabla u_{r} = \nabla \alpha_{\rm r} c u_{\rm r}$ for optically thin regions ($\alpha_{\rm r}$ is a dimensionless coefficient, set to unity in our simulations), $\sigma_{tot}$ is the total opacity, and $c$ is the speed of light.
+such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D \approx \frac{\alpha_{\rm r} c u_{\rm r}}{|\nabla u_{\rm r} |}$  such that $\nabla\cdot D \nabla u_{r} = \nabla \alpha_{\rm r} c u_{\rm r}$ for optically thin regions ($\alpha_{\rm r}$ is a dimensionless coefficient, set to unity in our simulations), $\sigma_{tot}$ is the total opacity, and $c$ is the speed of light.
 
 \section{General Flowchart}
 \label{sec:flowchart}
