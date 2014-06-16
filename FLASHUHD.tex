@@ -168,7 +168,8 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 			\begin{enumerate}
 				\item Calculates sound speed: {\color{red} $c^2 = \frac{\gamma P}{\rho}$} {\color{blue} Replace with $c_{\rm r}$???}
 				\item \textbf{prim2con} Calculates conversions from primitive to conserved variables.  The conserved variables are $\rho, \rho \vec{v}, E_{\rm tot}$ \\
-				\item \textbf{prim2flx} Converts from variables to fluxes.  {\color{red} $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$} {\color{blue} We need to decide which fluxes to place here.  Most likely: replace total energy flux with radiation energy and gas energy fluxes.}
+				\item \textbf{prim2flx} Converts from variables to fluxes.  {\color{red} $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$} {\color{blue} We need to decide which fluxes to place here.  Most likely: replace total energy flux with radiation energy and gas energy fluxes.  $F=\rho v$, $F=\rho v v + p_{\rm gas}$, $F=E_{
+			\rm gas + kin} v + p_{\rm gas} v$, $F=(3-f)/2)E_{\rm r} v$}
 				\item Left and right state logic.  Calculates $F^* = \left[ S_R F_L - S_L F_R + S_R S_L (U_R - U_L) \right]/(S_R-S_L)$ in the case of rarefaction waves...?
 			\end{enumerate}
 		\end{itemize}
