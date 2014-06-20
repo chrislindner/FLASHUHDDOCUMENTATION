@@ -115,7 +115,7 @@ If we include opacity effects in the low optical depth limits, the complete mome
 \partial_t (\rho\mathbf{v}) + \nabla \cdot (\rho\mathbf{v}\mathbf{v}) + \nabla P_{\rm tot} - \frac{\lambda}{3} \nabla P_{\rm r}= 0,
 \eeq
 }
-where $P_{\rm m} = P_{\rm e} + P_{\rm i}$ is the matter (electron $+$ ion) pressure, $\lambda$ is the flux limiter, and $P_{\rm r}$ is the radiation pressure.  Note that we are working in the non-relativistic limit and ignoring terms of $\mathcal{O}(\frac{v}{C})$.  We also do not implement a variable Eddington factor, a key difference from Z11.  The diffusion coefficient used in flash is
+where $P_{\rm m} = P_{\rm e} + P_{\rm i}$ is the matter (electron $+$ ion) pressure, $\lambda$ is the flux limiter, and $P_{\rm r}$ is the radiation pressure.  Note that we are working in the non-relativistic limit and ignoring terms of $\mathcal{O}(\frac{v}{C})$.  We also do not implement a variable Eddington factor, a key difference from Z11.  The flux-limited diffusion coefficient used in flash is
 \beq
 D = \frac{c}{3\sigma_{tot} + \frac{|\nabla u_{r}|}{\alpha_r u_{r}}},
 \eeq
@@ -125,16 +125,16 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 \label{sec:flowchart}
 \begin{description}
 	\item[Hydro] Main FLASH hydro driver that calls the unsplit solver.
-	\item[hy\_uhd\_unsplit] This basically runs through the entire unsplit solver.  It calls the following functions (\verb!hy_uhd_! prefixes have been omitted):
+	\item[hy\_uhd\_unsplit] This basically runs through the entire unsplit solver.  {\color{blue}This function seems pretty general and I think few, if any changes are needed here.  Instead, changes need to be made in the functions it calls.}  It calls the following functions (\verb!hy_uhd_! prefixes have been omitted):
 	\begin{description}
-		\item[putGravityUnsplit]
-		\item[getRiemannState]  Calculates and stores Riemann state values at cell interfaces so we can use these to compute fluxes, see MC 4.2.3
+		\item[putGravityUnsplit] Calls \verb!Gravity_accelOneRow!.  Fills \verb!grav! arrays.  {\color{blue}No changes needed here}.
+		\item[getRiemannState]  Calculates and stores Riemann state values at cell interfaces so we can use these to compute fluxes, see MC 4.2.3.
 		\begin{itemize}
 			\item Computes the divergence of the velocity field.
-			\item Prepares slope flattening variables that later get used later in PPM: MC 4.2.2 . {\color{red} These currently involve $P_{\rm tot}$.} {\color{blue} Need to replace with $P_{\rm mod} = P_{\rm g} + \lambda E_{\rm r}$}.
+			\item Prepares slope flattening variables that later get used later in PPM: MC 4.2.2 . {\color{red} These currently involve $P_{\rm tot}$.} {\color{blue} Need to replace with $P_{\rm mod} = P_{\rm g} + \lambda E_{\rm r}$ or do some sort of average like CASTRO?}.
 			\item Prepares the vector of variables and calls \textbf{dataReconstOneStep}, which evolves cell-centered values by $\Delta t / 2$ at cell interfaces using PPM characteristic tracing.  Most of this is carried out in the function below.
 			\begin{itemize}
-				\item \textbf{DataReconstructNomralDir\_PPM} The driver of PPM and characteristic tracing.  The steps described are as follows:
+				\item \textbf{DataReconstructNormalDir\_PPM} The driver of PPM and characteristic tracing.  The steps described are as follows:
 				\begin{enumerate}
 					\item Calculate $\boldsymbol{\lambda}_0$, which is the vector of characteristic speeds. {\color{red} See Section \ref{sec:characteristic} for the changes to this.}
 					\item Estimates the slope of the primitives and some additional variables at the interfaces by calling \verb!hy_uhd_TVDslope! (see below).  Projects $\bar{\Delta}$ (AKA \verb!delbar!, $\delta q$), the estimated slope at each interface, to primitives (?).%  Carries out $U = \frac{1}{2} \left( U_C + U_L -\bar{\Delta}_O  - \bar{\Delta}_N \right)$.  I'm not really sure what this all means.%
@@ -167,10 +167,10 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 			\item \textbf{HLL} This is the most stable solver we've been using.  It's in charge of computing the high-order Godunov fluxes based on the L and R Riemann states.
 			\begin{enumerate}
 				\item Calculates sound speed: {\color{red} $c^2 = \frac{\gamma P}{\rho}$} {\color{blue} Replace with $c_{\rm r}$???}
-				\item \textbf{prim2con} Calculates conversions from primitive to conserved variables.  The conserved variables are $\rho, \rho \vec{v}, E_{\rm tot}$ \\
+				\item \textbf{prim2con} Calculates conversions from primitive to conserved variables.  The conserved variables are $\rho, \rho \vec{v}$, {\color{red}$E_{\rm tot}$} {\color{blue}$E_{\rm kin+gas}$, $E_{\rm rad}$} \\
 				\item \textbf{prim2flx} Converts from variables to fluxes.  {\color{red} $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$} {\color{blue} We need to decide which fluxes to place here.  Most likely: replace total energy flux with radiation energy and gas energy fluxes.  $F=\rho v$, $F=\rho v v + p_{\rm gas}$, $F=E_{
 			\rm gas + kin} v + p_{\rm gas} v$, $F=(3-f)/2)E_{\rm r} v$}
-				\item Left and right state logic.  Calculates $F^* = \left[ S_R F_L - S_L F_R + S_R S_L (U_R - U_L) \right]/(S_R-S_L)$ in the case of rarefaction waves...?
+				\item Left and right state logic.  Calculates $F^* = \left[ S_R F_L - S_L F_R + S_R S_L (U_R - U_L) \right]/(S_R-S_L)$ in the case of rarefaction waves...?  This appears to be the standard equation for fluxes calculated in HLL (see HLL reference).
 			\end{enumerate}
 		\end{itemize}
 		\item[unsplitUpdate] Given the fluxes, updates the conserved, cell-centered quantities.  This is responsible for getting all the variables and geometric terms in the right form so it can call two subfunctions that are present in this file.
@@ -178,9 +178,11 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 			\item \textbf{updateConservedVariable} Computes $U = U-\frac{\Delta t}{\Delta x}\left( F_R - F_L \right)$.  See equations 53 and 63a in MC?
 			\item \textbf{updateInternalEnergy} When flag \verb!hy_useAuxEintEqn! is set, computes 
 			\beq
+			{\color{red}
 			\rho \epsilon = \rho \epsilon + \frac{\Delta t}{\Delta x} \left( eF_L - eF_R + P (PF_L - PF_R) \right).
+			}
 			\eeq
-			This is turned on by default in our simulations.
+			This is turned on by default in our simulations. {\color{blue} It seems like this should be modified.}
 		\end{itemize}
 		{\color{red}\item[multiTemp/unsplitUpdateMultiTemp] Updates energies for the special 3T conditions.  See Section \ref{sec:hydro} and the FLASH manual for more information on the "Rage-like" approach used here.  Some of the weird uhd crashes I've seen occur here.  There are comments that explicitly state these crashes occur for "unknown reasons."}
 		\begin{itemize}
@@ -236,7 +238,7 @@ I believe our version of $\mathbf{A}$ is
 	\mathbf{A} = 
 	\begin{pmatrix}
 	v & rho & 0 & 0 & 0 & 0 \\
-	0 & u & 0 & 0 & \frac{1}{\rho} & \frac{\lambda}{rho} \\
+	0 & v & 0 & 0 & \frac{1}{\rho} & \frac{\lambda}{rho} \\
 	0 & 0 & v & 0 & 0 & 0 \\
 	0 & 0 & 0 & v & 0 & 0 \\
 	0 & \gamma P_{\rm gas} & 0 & 0 & v & 0 \\
@@ -319,5 +321,42 @@ L^*_n &=& \frac{1}{2} \left( -1 - \frac{\Delta t}{\Delta x} \lambda_{0}^n \right
 &+& \frac{1}{4} \left[ 1 + 2 \frac{\Delta t}{\Delta x} \lambda_{0}^n  + \frac{4}{3} \left( \frac{\Delta t}{\Delta x} \lambda_0^n \right)^2 \right] \mathbf{R}^n \left( \mathbf{L}^n \cdot - \mathbf{Q}_{i6} \right)
 \eea
 where $\mathbf{R}^n$ is the $n$th column of $\mathbf{R}$.  There is a corresponding form of these equations for the right face states as well.
+
+\section{Flattening}
+In \verb!hy_uhd_getRiemannState!, FLASH first calculates the following quantities that will help determine flattening coefficients
+\bea
+\Delta P_1 = P_{i+1} - P_{i-1} \\
+\Delta P_2 = P_{i+2} - P_{i-2} \\
+\Delta v_1 = v_{i+1} - v_{i-1} \\
+P_{\rm L}  = P_{i-1} \\
+P_{\rm R}  = P_{i+1},
+\eea
+where $P$ here is the total pressure that has NOT been modified by the flux limiter, and each value of $P$ and $v$ are taken at cell centers (e.g. $P_{i+1}$ is the cell-centered total pressure at the cell to the right of the current cell we're looking at).
+
+Then we calculate the flattening \verb!tilde! coefficient $\tilde{\chi}$ via
+\[
+    \tilde{\chi}_i = 
+\begin{cases}
+		\max\left(0.0,\left(1,10 \min\left(\frac{\Delta P_1}{\Delta P_2} - 0.75\right)\right)\right),& \text{if } |\Delta P_2| > 10^{-15} \text{ and }\left(\frac{|\Delta P_1|}{\min(P_{\rm L}, P_{\rm R})} \geq \frac{1}{3}\text{ or }\Delta v_1 < 0\right)\\
+    0,              & \text{otherwise}.
+\end{cases}
+\]
+
+Using this, we calculate the actual flattening coefficient $\chi$
+\[
+    \chi_i = 
+\begin{cases}
+		\max \left( \tilde{\chi}_i,\tilde{\chi}_{i+1} \right),& \text{if } \Delta P_1 < 0 \\
+		\max \left( \tilde{\chi}_i,\tilde{\chi}_{i-1} \right),& \text{if } \Delta P_1 > 0 \\
+    \max \tilde{\chi}_i,              & \text{otherwise}.
+\end{cases}
+\]
+
+The values of $\chi$ are sent to \verb!hy_uhd_dataReconstOnestep!, which calls \verb!hy_uhd_DataReconstructNormalDir_PPM!, where the flattening is actually carried out via
+\bea
+S_{f,i-\frac{1}{2}} &=& \chi S_i + (1 - \chi) S_{i-\frac{1}{2}}  \\
+S_{f,i+\frac{1}{2}} &=& \chi S_i + (1 - \chi) S_{i+\frac{1}{2}}.  \\
+\eea
+
 
 \end{document}
