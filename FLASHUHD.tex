@@ -121,7 +121,7 @@ D = \frac{c}{3\sigma_{tot} + \frac{|\nabla u_{r}|}{\alpha_r u_{r}}},
 \eeq
 such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D \approx \frac{\alpha_{\rm r} c u_{\rm r}}{|\nabla u_{\rm r} |}$  such that $\nabla\cdot D \nabla u_{r} = \nabla \alpha_{\rm r} c u_{\rm r}$ for optically thin regions ($\alpha_{\rm r}$ is a dimensionless coefficient, set to unity in our simulations), $\sigma_{tot}$ is the total opacity, and $c$ is the speed of light.
 
-\section{General Flowchart}
+\section{General Outline}
 \label{sec:flowchart}
 \begin{description}
 	\item[Hydro] Main FLASH hydro driver that calls the unsplit solver.
@@ -131,7 +131,7 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 		\item[getRiemannState]  Calculates and stores Riemann state values at cell interfaces so we can use these to compute fluxes, see MC 4.2.3.
 		\begin{itemize}
 			\item Computes the divergence of the velocity field.
-			\item Prepares slope flattening variables that later get used later in PPM: MC 4.2.2 . {\color{red} These currently involve $P_{\rm tot}$.} {\color{blue} Need to replace with $P_{\rm mod} = P_{\rm g} + \lambda E_{\rm r}$ or do some sort of average like CASTRO?}.
+			\item Prepares slope flattening variables that later get used later in PPM: MC 4.2.2 . {\color{red} These currently involve $P_{\rm tot}$.} {\color{blue} Need to replace with $P_{\rm mod} = P_{\rm g} + \lambda E_{\rm r}$ or do some sort of average like CASTRO?}.  See Section \ref{sec:flattening} for more info.
 			\item Prepares the vector of variables and calls \textbf{dataReconstOneStep}, which evolves cell-centered values by $\Delta t / 2$ at cell interfaces using PPM characteristic tracing.  Most of this is carried out in the function below.
 			\begin{itemize}
 				\item \textbf{DataReconstructNormalDir\_PPM} The driver of PPM and characteristic tracing.  The steps described are as follows:
@@ -141,7 +141,7 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 					\item Performs PPM Polynomial interpolation.   Carries out $q_{i+\frac{1}{2}} = \frac{1}{2} \left( q_{i+1} + q_i \right) - \frac{1}{6} \left( \delta q_{i+1} - \delta q_i \right)$, which is equation 66 in MC.  Note that they mention CW equation 1.9, which is equivalent to MC equation 67.  I don't see this done anywhere, however.  I think this might be for some sort of special case or higher order estimate or for use when you have a simpler version of $\delta q$, but I'm really not sure.
 					\item Interpolates species and mass scalars (which we don't use).
 					\item Carries out steepening (which is turned off in the setup we use).
-					\item Flattening.  The flattening coefficent is actually set up in \verb!hy_uhd_getRiemannState! and carried into this function.  Flattening is described in Equations 74-80 in MC.  This is applied to the species first, then to \verb!vecL! and \verb!vecR!, which are the left and right interface values, $q_{i-\frac{1}{2}}$ and $q_{i+\frac{1}{2}}$ in MC notation.  MC equations 70a and 70b are carried out here. 
+					\item Flattening.  The flattening coefficent is actually set up in \verb!hy_uhd_getRiemannState! and carried into this function.  Flattening is described in Equations 74-80 in MC.  This is applied to the species first, then to \verb!vecL! and \verb!vecR!, which are the left and right interface values, $q_{i-\frac{1}{2}}$ and $q_{i+\frac{1}{2}}$ in MC notation.  MC equations 70a and 70b are carried out here. See Section \ref{sec:flattening} for more info.
 					\item Monotonicity Check.  This is equivalent to equations 69a, 69b, and 69c of MC.
 					\item "Take initial guesses for the left and right states."  This calculates $\Delta q_i$ (\verb!delW!) and $q_{6i}$ (\verb!W6!, note the typo in MC; there should not be a $\Delta$ here) as defined in MC Equations 72b and 72c.  I describe these matrices a bit more in Section \ref{sec:characteristic} below.  There are some additional computations relating to the \verb!Wp! and \verb!Wm! arrays in the code.  However, it turns out that all of these changes are overwritten later on, so these are apparently vestigial and not used.  Everything in the sections labeled 7a, 7b, 7c, and 7d in FLASH can be ignored. {\color{red} The $\Delta q_i$ and $q_{6i}$ arrays need to be updated with our new variables.  See \ref{sec:characteristic} for details.}
 					\item "Advance the above interpolated interface values by $\frac{1}{2}$ time step using characteristic Tracing."  I have more detailed notes on what happens during this, but it's similar to MC 4.2.3 .  See Section \ref{sec:characteristic}.
@@ -151,7 +151,7 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 				\begin{itemize}
 					\item \textbf{eigenParameters} Calculates several parameters needed for the wave speed eigenvalue calculations. {\color{red} These need to be replaced with the appropriate adjusted parameters for the eigenvalues.  See Section \ref{sec:characteristic}.}
 					\item \textbf{eigenValue} Calculates the eigenvalues (wave speeds) that fill the eigenvectors.  Fills $\lambda_0$ (see Section \ref{sec:characteristic}).  {\color{red} These need to be replaced with the appropriate adjusted values.  Some of these fixeswill take place in \verb!eigenValue!.  See Section \ref{sec:characteristic}.}
-					\item \textbf{eigenVector} Fills the $\mathbf{L}$ and $\mathbf{R}$ eigenvectors in primative or conservative form (see Section \ref{sec:characteristic}). {\color{red} These need to be replaced with the appropriate for the eigenvectors.  See Section \ref{sec:characteristic}.} 
+					\item \textbf{eigenVector} Fills the $\mathbf{L}$ and $\mathbf{R}$ eigenvectors in primative or conservative form (see Section \ref{sec:characteristic}). {\color{red} These need to be replaced with the appropriate for the eigenvectors.  See Section \ref{sec:characteristic}.}  Note that \verb!cons! is hard-wired to be \verb!false! for all relevant calls.
 					\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way." (sic)  ???  See Section 3 of MC, especially Section 3.2.  This computes \verb!sig!, the "transverse flux vector."
 					\item \textbf{TVDslope} "This routine calculates limited slopes depending on the user's choice of the slope limiter."  We use a \verb!minmod! slope limiter.  \verb!delbar! (the vector $\bar{\Delta}$) is returned, which contains the limited slopes for primitive variables + \verb!gamc!, \verb!game!, and gravity.  It is similar to, but not the same as some of the slope limiters described on pages 46 and 47 of MC.
 				\end{itemize}
@@ -160,16 +160,16 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 			\item Updates Gravity.  It looks like they're just adding in the last term of MC 53.
 			\item Stores scratch terms for each direction.
 			\item Applies transverse correction terms for 3D.  \verb!hy_use3dFullCTU! is turned on in our code.  The bulk of this seems to be handled by the next function call below.
-			\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way."  This is also called above, inside the PPM solver.  I don't understand why this is called in two separate places here.
+			\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way." (sic) ??? This is also called above, inside the PPM solver.  I don't understand why this is called in two separate places here.
 		\end{itemize}
-		\item[getFaceFlux] Computes fluxes at cell faces.  Also calls specific solvers (e.g. \textbf{HLL}).  Calculates min timestep and alters fluxes for artificial viscosity. {\color{blue} There are some calculations related to \verb!updateInternalEnergy! that need to be adjusted here.  Some fluxes are calculated here, not just in \verb!prim2flx! below.}
+		\item[getFaceFlux] Computes fluxes at cell faces.  Also calls specific solvers (e.g. \textbf{HLL}).  Calculates min timestep and alters fluxes for artificial viscosity. {\color{blue} There are some calculations related to \verb!updateInternalEnergy! that need to be adjusted here.  Some fluxes are calculated here, not just in \verb!prim2flx! below.}  {\color{red} Advects species interenal energies: $F_{\rm erad} = F_{\rho} \epsilon_{\rm rad}$ etc. for radiation, ion, and electron internal energies.}
 		\begin{itemize}
 			\item \textbf{HLL} This is the most stable solver we've been using.  It's in charge of computing the high-order Godunov fluxes based on the L and R Riemann states.
 			\begin{enumerate}
-				\item Calculates sound speed: {\color{red} $c^2 = \frac{\gamma P}{\rho}$} {\color{blue} Replace with $c_{\rm r}$???}
+				\item Calculates sound speed: {\color{red} $c^2 = \frac{\gamma P}{\rho}$} {\color{blue} Replace with $c_{\rm m}$???}
 				\item \textbf{prim2con} Calculates conversions from primitive to conserved variables.  The conserved variables are $\rho, \rho \vec{v}$, {\color{red}$E_{\rm tot}$} {\color{blue}$E_{\rm kin+gas}$, $E_{\rm rad}$} \\
 				\item \textbf{prim2flx} Converts from variables to fluxes.  {\color{red} $F = \rho v$, $F=\rho v v + P$, and $F= v(E + P)$} {\color{blue} We need to decide which fluxes to place here.  Most likely: replace total energy flux with radiation energy and gas energy fluxes.  $F=\rho v$, $F=\rho v v + p_{\rm gas}$, $F=E_{
-			\rm gas + kin} v + p_{\rm gas} v$, $F=(3-f)/2)E_{\rm r} v$}
+			\rm gas + kin} v + p_{\rm gas} v$, $F=\frac{(3-f)}{2}E_{\rm r} v$}
 				\item Left and right state logic.  Calculates $F^* = \left[ S_R F_L - S_L F_R + S_R S_L (U_R - U_L) \right]/(S_R-S_L)$ in the case of rarefaction waves...?  This appears to be the standard equation for fluxes calculated in HLL (see HLL reference).
 			\end{enumerate}
 		\end{itemize}
@@ -179,7 +179,7 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 			\item \textbf{updateInternalEnergy} When flag \verb!hy_useAuxEintEqn! is set, computes 
 			\beq
 			{\color{red}
-			\rho \epsilon = \rho \epsilon + \frac{\Delta t}{\Delta x} \left( eF_L - eF_R + P (PF_L - PF_R) \right).
+			\rho \epsilon = \rho \epsilon + \frac{\Delta t}{\Delta x} \left( eF_L - eF_R + P (F_{P,L} - F_{P,R}) \right).
 			}
 			\eeq
 			This is turned on by default in our simulations. {\color{blue} It seems like this should be modified.}
@@ -190,7 +190,7 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 		\end{itemize}
 		
 		\item[energyFix] Corrects energy in cases where the total energy is advected and \verb!eint! can become negative.  In the three temperature case, this step is actually handled by \textbf{unsplitUpdateMultiTemp}.
-		\item[Grid\_putFluxData] "Put the fluxes in a direction specified by axis for boundary cells for block blockID. This routine needs to be used with adaptive mesh since fluxes calculated by the two blocks that are at fine-coarse boundary have different accuracy. The fluxes calculated by individual blocks are reported to  the Grid through this call. Once that is done, a call to \verb!Grid_conserveFluxes! applies the flux conservation algorithm to make it consistent across the fine-coarse boundaries."
+		\item[Grid\_putFluxData] "Put the fluxes in a direction specified by axis for boundary cells for block blockID. This routine needs to be used with adaptive mesh since fluxes calculated by the two blocks that are at fine-coarse boundary have different accuracy. The fluxes calculated by individual blocks are reported to  the Grid through this call. Once that is done, a call to \verb!Grid_conserveFluxes! applies the flux conservation algorithm to make it consistent across the fine-coarse boundaries."  Basically it takes an array of fluxes for all variables and stores them in a more general fashion.  It also does a special adjustment for fluxes that "scale as flux densities" (?).
 		\item[Grid\_conserveFluxes] Corrects fluxes across fine-course resolution boundaries.  See above.
 		\item[Eos\_wrapped]
 		\item[putGravityUnsplit]
@@ -204,7 +204,7 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 
 \section{Characteristic Tracing}
 \label{sec:characteristic}
-These are equations I was able to decipher from \verb!hy_uhdDataREconstructNormalDir_PPM!.  I'm going to focus on step $8$, characteristic tracing, which is similar to MC Section 4.2.3 .
+These are equations I was able to decipher from \verb!hy_uhdDataReconstructNormalDir_PPM!.  I'm going to focus on step $8$, characteristic tracing, which is similar to MC Section 4.2.3 .
 
 The equations of our hyperbolic system are
 \bea
@@ -249,9 +249,9 @@ I believe our version of $\mathbf{A}$ is
 
 Our vector of eigenvalues is
 \beq
-{\color{red}\boldsymbol{\lambda}_0 = \begin{pmatrix}v - c\\v \\ v \\ v \\ v + c\end{pmatrix}}{\color{blue}\boldsymbol{\lambda}_0 = \begin{pmatrix}v - c_{\rm r}\\v \\ v \\ v \\ v \\ v + c_{\rm r}\end{pmatrix}}
+{\color{red}\boldsymbol{\lambda}_0 = \begin{pmatrix}v - c\\v \\ v \\ v \\ v + c\end{pmatrix}}{\color{blue}\boldsymbol{\lambda}_0 = \begin{pmatrix}v - c_{\rm m}\\v + c_{\rm m} \\v \\ v \\ v \\ v \end{pmatrix}}
 \eeq
-Where $c$ is sound speed and $c_{\rm r}=\sqrt{\gamma \frac{P_{\rm g}}{\rho} + (\lambda + 1)\frac{\lambda E_{\rm r}}{\rho}}$ is the radiation modified sound speed.  {\color{blue}Note: I'm a little confused about the order of these values in the new version.  Z11 presents these in a different ordering than Z13.}  This is computed in the \verb!hy_uhd_eigenValue! function.  This is the variable \verb!lambda0! in the code and known as $\Lambda$ in MC.
+Where $c$ is sound speed and $c_{\rm m}=\sqrt{\gamma \frac{P_{\rm g}}{\rho} + (\lambda + 1)\frac{\lambda E_{\rm r}}{\rho}}$ is the radiation modified sound speed.  {\color{blue}Note: I'm a little confused about the order of these values in the new version.  Z11 presents these in a different ordering than Z13.}  This is computed in the \verb!hy_uhd_eigenValue! function.  This is the variable \verb!lambda0! in the code and known as $\Lambda$ in MC.
 
 The left eigenvector (variable \verb!leig0!)  as defined in \verb!hy_uhd_eigenVector! is
 \beq
@@ -265,17 +265,29 @@ The left eigenvector (variable \verb!leig0!)  as defined in \verb!hy_uhd_eigenVe
 \frac{1}{2 \rho c^2} & 0 & \frac{1}{c} & 0 & \frac{1}{2 \rho c^2}
 \end{pmatrix}
 }
+%{\color{blue}
+%\mathbf{L} = 
+%\begin{pmatrix}
+%0 & 0 & 1 & 0 \\
+%-\frac{\rho}{2c_{\rm r}}  & 0 & 0 & \frac{\rho}{2 c_{\rm r}} \\
+%\frac{1}{2 c_{\rm r}^2}& -(\lambda + 1) \frac{E_{\rm r}}{\rho c_{\rm r}^2}& -\frac{1}{c_{\rm r}^2}&\frac{1}{2c_{\rm r}^2} \\
+%\frac{\lambda}{2 c_{\rm r}^2}& c^2 c_{\rm r}^2& -\frac{\lambda}{c_{\rm r}^2}&\frac{\lambda}{2 c_{\rm r}^2}
+%\end{pmatrix}
+%}
 {\color{blue}
 \mathbf{L} = 
 \begin{pmatrix}
-0 & 0 & 1 & 0 \\
--\frac{\rho}{2c_{\rm r}}  & 0 & 0 & \frac{\rho}{2 c_{\rm r}} \\
-\frac{1}{2 c_{\rm r}^2}& -(\lambda + 1) \frac{E_{\rm r}}{\rho c_{\rm r}^2}& -\frac{1}{c_{\rm r}^2}&\frac{1}{2c_{\rm r}^2} \\
-\frac{\lambda}{2 c_{\rm r}^2}& c^2 c_{\rm r}^2& -\frac{\lambda}{c_{\rm r}^2}&\frac{\lambda}{2 c_{\rm r}^2}
+0 & -\frac{\rho}{2c_{\rm m}} & 0 & 0 & \frac{1}{2 c_{\rm m}^2} & \frac{\lambda}{2 c_{\rm m}^2} \\
+0 & \frac{\rho}{2 c_{\rm m}} & 0 & 0 & \frac{1}{2 c_{\rm m}^2} & \frac{\lambda}{2 c_{\rm m}^2} \\
+0 & 0 & 0 & 0 & \frac{c_{\rm gas}^2 - c_{\rm m}^2}{c_{\rm m}^2 \lambda} & \frac{c_{\rm gas}^2}{c_{\rm m}^2} \\
+1 & 0 & 0 & 0 & -\frac{1}{c_{\rm m}^2} & -\frac{\lambda}{c_{\rm m}^2} \\ 
+0 & 0 & 0 & 1 & 0 & 0 \\
+0 & 0 & 1 & 0 & 0 & 0
 \end{pmatrix}
 }
 \eeq
-{\color{blue} This new version is the exact version from Z11.  However, they only talk about doing this in one dimension, so their numbers of elements are different.  We need to consider how to get this to work with our array of variables, which differ in that our $\mathbf{Q}$ contains all of the velocity components, whereas Z11 only carries the one velocity component for the direction being considered.}
+%{\color{blue} This new version is the exact version from Z11.  However, they only talk about doing this in one dimension, so their numbers of elements are different.  We need to consider how to get this to work with our array of variables, which differ in that our $\mathbf{Q}$ contains all of the velocity components, whereas Z11 only carries the one velocity component for the direction being considered.}
+{\color{blue} This new version the transpose of what we derived previously, and is the exact form of the matrix found in the code.}
 
 The right eigenvector (variable \verb!reig0!) is
 \beq
@@ -289,8 +301,19 @@ The right eigenvector (variable \verb!reig0!) is
 \rho c^2 & 0 & 0 & 0 & \rho c^2
 \end{pmatrix}
 }
+{\color{blue}
+\mathbf{R} = 
+\begin{pmatrix}
+1 & 1 & 0 & 1 & 0 & 0 \\
+- \frac{c_{\rm m}}{\rho} & \frac{c_{\rm m}}{\rho} & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & 0 & 1\\
+0 & 0 & 0 & 0 & 1 & 0\\
+c_{\rm gas}^2 & c_{\rm gas}^2 & - \lambda & 0 & 0 & 0 \\
+\frac{c_{\rm rad}^2}{\lambda} & \frac{c_{\rm rad}^2}{\lambda} & 1 & 0 & 0 & 0
+\end{pmatrix}
+}
 \eeq
-{\color{blue} As above, we need to fix this for our new $\mathbf{A}$ and  expand this for our values of $\mathbf{Q}$, which includes all velocity components}.
+{\color{blue} As above, this is the new version we derived and the exact version now in FLASH.}.
 
 The array \verb!delW! is
 \beq
@@ -317,12 +340,13 @@ The final Riemann states are calculated via
 \eeq
 $L^*_n$, which is referred to as \verb!vecL! in the code is
 \bea
-L^*_n &=& \frac{1}{2} \left( -1 - \frac{\Delta t}{\Delta x} \lambda_{0}^n \right) \mathbf{R}^n \left( \mathbf{L}^n \cdot \Delta \mathbf{Q} \right) \nonumber \\
-&+& \frac{1}{4} \left[ 1 + 2 \frac{\Delta t}{\Delta x} \lambda_{0}^n  + \frac{4}{3} \left( \frac{\Delta t}{\Delta x} \lambda_0^n \right)^2 \right] \mathbf{R}^n \left( \mathbf{L}^n \cdot - \mathbf{Q}_{i6} \right)
+L^*_n &=& \frac{1}{2} \left( -1 - \frac{\Delta t}{\Delta x} \lambda_{0}^n \right) \mathbf{R}^n \left( \mathbf{L} \cdot \Delta \mathbf{Q} \right) \nonumber \\
+&+& \frac{1}{4} \left[ 1 + 2 \frac{\Delta t}{\Delta x} \lambda_{0}^n  + \frac{4}{3} \left( \frac{\Delta t}{\Delta x} \lambda_0^n \right)^2 \right] \mathbf{R}^n \left( \mathbf{L} \cdot - \mathbf{Q}_{i6} \right)
 \eea
 where $\mathbf{R}^n$ is the $n$th column of $\mathbf{R}$.  There is a corresponding form of these equations for the right face states as well.
 
 \section{Flattening}
+\label{sec:flattening}
 In \verb!hy_uhd_getRiemannState!, FLASH first calculates the following quantities that will help determine flattening coefficients
 \bea
 \Delta P_1 = P_{i+1} - P_{i-1} \\
@@ -337,7 +361,7 @@ Then we calculate the flattening \verb!tilde! coefficient $\tilde{\chi}$ via
 \[
     \tilde{\chi}_i = 
 \begin{cases}
-		\max\left(0.0,\left(1,10 \min\left(\frac{\Delta P_1}{\Delta P_2} - 0.75\right)\right)\right),& \text{if } |\Delta P_2| > 10^{-15} \text{ and }\left(\frac{|\Delta P_1|}{\min(P_{\rm L}, P_{\rm R})} \geq \frac{1}{3}\text{ or }\Delta v_1 < 0\right)\\
+		\max\left(0.0,\min\left(1,10 \left(\frac{\Delta P_1}{\Delta P_2} - 0.75\right)\right)\right),& \text{if } |\Delta P_2| > 10^{-15} \text{ and }\left(\frac{|\Delta P_1|}{\min(P_{\rm L}, P_{\rm R})} \geq \frac{1}{3}\text{ or }\Delta v_1 < 0\right)\\
     0,              & \text{otherwise}.
 \end{cases}
 \]
@@ -348,15 +372,26 @@ Using this, we calculate the actual flattening coefficient $\chi$
 \begin{cases}
 		\max \left( \tilde{\chi}_i,\tilde{\chi}_{i+1} \right),& \text{if } \Delta P_1 < 0 \\
 		\max \left( \tilde{\chi}_i,\tilde{\chi}_{i-1} \right),& \text{if } \Delta P_1 > 0 \\
-    \max \tilde{\chi}_i,              & \text{otherwise}.
+    \tilde{\chi}_i,              & \text{otherwise}.
 \end{cases}
 \]
 
 The values of $\chi$ are sent to \verb!hy_uhd_dataReconstOnestep!, which calls \verb!hy_uhd_DataReconstructNormalDir_PPM!, where the flattening is actually carried out via
 \bea
 S_{f,i-\frac{1}{2}} &=& \chi S_i + (1 - \chi) S_{i-\frac{1}{2}}  \\
-S_{f,i+\frac{1}{2}} &=& \chi S_i + (1 - \chi) S_{i+\frac{1}{2}}.  \\
+S_{f,i+\frac{1}{2}} &=& \chi S_i + (1 - \chi) S_{i+\frac{1}{2}}. \\
 \eea
 
+\section{GetFaceFlux}
+\label{sec:getfaceflux}
+This is a detailed summary of what happens in \verb!hy_uhd_getFaceFlux!.  The FLASH description is "This routine computes high-order Godunov fluxes at cell interface centers for each spatial direction using a choice of Riemann solvers."
+
+First, we simply get the data in the appropriate formats and arrays and call the HLL solver.  The HLL solver returns \verb!Fstar!, the computed flux data.  \verb!Fstar! contains fluxes for {\color{red}$\rho$, $p_x$ (x momentum), $p_y$, $p_z$, $E_{\rm tot}$} {\color{blue}$\rho$, $p_x$ (x momentum), $p_y$, $p_z$, $E_{\rm kin+gas}$, and $E_{\rm rad}$}.
+
+Then, artificial viscosity is applied.  In one dimension it is
+\bea
+\verb!cvisc! = \verb!hy_cvisc! \max\left(v_{x,i-1} - v_{x,i},0 \right)
+F^{(\rho)}_{\rm visc} = F^{(\rho)} + \verb!cvisc! 
+\eea
 
 \end{document}
