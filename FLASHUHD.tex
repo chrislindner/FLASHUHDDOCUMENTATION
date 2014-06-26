@@ -152,8 +152,8 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 					\item \textbf{eigenParameters} Calculates several parameters needed for the wave speed eigenvalue calculations. {\color{red} These need to be replaced with the appropriate adjusted parameters for the eigenvalues.  See Section \ref{sec:characteristic}.}
 					\item \textbf{eigenValue} Calculates the eigenvalues (wave speeds) that fill the eigenvectors.  Fills $\lambda_0$ (see Section \ref{sec:characteristic}).  {\color{red} These need to be replaced with the appropriate adjusted values.  Some of these fixeswill take place in \verb!eigenValue!.  See Section \ref{sec:characteristic}.}
 					\item \textbf{eigenVector} Fills the $\mathbf{L}$ and $\mathbf{R}$ eigenvectors in primative or conservative form (see Section \ref{sec:characteristic}). {\color{red} These need to be replaced with the appropriate for the eigenvectors.  See Section \ref{sec:characteristic}.}  Note that \verb!cons! is hard-wired to be \verb!false! for all relevant calls.
-					\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way." (sic)  ???  See Section 3 of MC, especially Section 3.2.  This computes \verb!sig!, the "transverse flux vector."
-					\item \textbf{TVDslope} "This routine calculates limited slopes depending on the user's choice of the slope limiter."  We use a \verb!minmod! slope limiter.  \verb!delbar! (the vector $\bar{\Delta}$) is returned, which contains the limited slopes for primitive variables + \verb!gamc!, \verb!game!, and gravity.  It is similar to, but not the same as some of the slope limiters described on pages 46 and 47 of MC.
+					\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way." (sic)  ???  See Section 3 of MC, especially Section 3.2.  This computes \verb!sig!, the "transverse flux vector."  {\color{blue} \textbf{TODO: UPDATE THIS FILE TO BE COMPATIBLE WITH NEW VARIABLE ARRAYS!}}
+					\item \textbf{TVDslope} "This routine calculates limited slopes depending on the user's choice of the slope limiter."  We use a \verb!minmod! slope limiter.  \verb!delbar! (the vector $\bar{\Delta}$) is returned, which contains the limited slopes for primitive variables + \verb!gamc!, \verb!game!, and gravity.  It is similar to, but not the same as some of the slope limiters described on pages 46 and 47 of MC.  {\color{blue}\textbf{TODO: UPDATE THIS FILE TO BE COMPATIBLE WITH NEW VARIABLE ARRAYS!}}
 				\end{itemize}
 			\end{itemize}
 			\item Applies geometric terms.  Not needed for Cartesian.
@@ -365,6 +365,7 @@ Then we calculate the flattening \verb!tilde! coefficient $\tilde{\chi}$ via
     0,              & \text{otherwise}.
 \end{cases}
 \]
+$\tilde{\chi}_i$ is essentially the same as $z$ in CASTRO.
 
 Using this, we calculate the actual flattening coefficient $\chi$
 \[
@@ -375,6 +376,13 @@ Using this, we calculate the actual flattening coefficient $\chi$
     \tilde{\chi}_i,              & \text{otherwise}.
 \end{cases}
 \]
+
+In CASTRO,
+\beq
+\verb!flatn! = 1 - \chi_i.
+\eeq
+CASTRO calculates \verb!flatn! using $P_{\rm gas}$ and $P_{\rm tot}$ and then multiplies the two values of \verb!flatn! to get a final parameter.  However, this seems internally inconsistent; for example, in the case of $P_{\rm gas}=P_{\rm tot}$, $\chi_{\rm rad} = \chi_i^2$.  {\color{blue}As we are unable to understand and resolve this discrepancy, we will move forward simply using $P_{\rm tot}$ in all calculations involving flattening.}
+
 
 The values of $\chi$ are sent to \verb!hy_uhd_dataReconstOnestep!, which calls \verb!hy_uhd_DataReconstructNormalDir_PPM!, where the flattening is actually carried out via
 \bea
