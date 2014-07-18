@@ -2,7 +2,7 @@
 %\documentclass{emulateapj}
 \pdfoutput=1
 \usepackage{color}
-\usepackage{apjfonts,amsmath}
+\usepackage{apjfonts,amsmath,amssymb}
 \usepackage{graphicx,verbatim}
 \newcommand{\beq}{\begin{equation}}
 \newcommand{\eeq}{\end{equation}}
@@ -34,10 +34,10 @@ The purpose of this documentation is to document the FLASH unsplit hydrodynamics
 \setcounter{footnote}{0}
 
 The latest version of the FLASH code is available in my directory \\
-\verb!/data1/r900-1/lindner/FLASH4.2.1/source/! \\
+\verb!/data1/r900-1/lindner/FLASH4.2.2/source/! \\
 
 Most of the files relevant to the unsplit solver are in \\
-\verb!/data1/r900-1/lindner/FLASH4.2.1/source/physics/Hydro/HydroMain/unsplit/Hydro_Unsplit!
+\verb!/data1/r900-1/lindner/FLASH4.2.2/source/physics/Hydro/HydroMain/unsplit/Hydro_Unsplit!
 
 Any file or directory names I mention will be relative to this directory.
 
@@ -79,7 +79,13 @@ total energy conservation,
 	\frac{\partial E_{\rm r}}{\partial t} + \nabla \cdot \left( \frac{3-f}{2} E_{\rm r} v \right)- \lambda v \cdot E_{\rm r} = 0,
 }
 \eea
-and the individual equations for internal energy advection.  {\color{red}In the three temperature, radiation hydrodynamics unit of FLASH, energy advection is split into three equations, one for each species
+and the individual equations for internal energy advection.  Note
+\bea
+\frac{3-f}{2} = \lambda + 1 \nonumber \\
+f = 1 - 2 \lambda
+\eea
+
+{\color{red}In the three temperature, radiation hydrodynamics unit of FLASH, energy advection is split into three equations, one for each species
 \bea 
 \frac{\partial \rho \epsilon_{\rm ele}}{\partial t} + \nabla \cdot [\rho \epsilon_{\rm ele} \mathbf{v}] + P_{\rm ele} \nabla \cdot \mathbf{v} = 0, \\
 \frac{\partial \rho \epsilon_{\rm ion}}{\partial t} + \nabla \cdot [\rho \epsilon_{\rm ion} \mathbf{v}] + P_{\rm ion} \nabla \cdot \mathbf{v} = 0, \\
@@ -132,7 +138,7 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 		\begin{itemize}
 			\item Computes the divergence of the velocity field.
 			\item Prepares slope flattening variables that later get used later in PPM: MC 4.2.2 . {\color{red} These currently involve $P_{\rm tot}$.} {\color{blue} Need to replace with $P_{\rm mod} = P_{\rm g} + \lambda E_{\rm r}$ or do some sort of average like CASTRO?}.  See Section \ref{sec:flattening} for more info.
-			\item Prepares the vector of variables and calls \textbf{dataReconstOneStep}, which evolves cell-centered values by $\Delta t / 2$ at cell interfaces using PPM characteristic tracing.  Most of this is carried out in the function below.
+			\item \textbf{DataReconstOneStep} (Part 1) Prepares the vector of variables and calls \textbf{dataReconstOneStep}, which evolves cell-centered values by $\Delta t / 2$ at cell interfaces using PPM characteristic tracing.  This calls the function below.
 			\begin{itemize}
 				\item \textbf{DataReconstructNormalDir\_PPM} The driver of PPM and characteristic tracing.  The steps described are as follows:
 				\begin{enumerate}
@@ -152,10 +158,11 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 					\item \textbf{eigenParameters} Calculates several parameters needed for the wave speed eigenvalue calculations. {\color{red} These need to be replaced with the appropriate adjusted parameters for the eigenvalues.  See Section \ref{sec:characteristic}.}
 					\item \textbf{eigenValue} Calculates the eigenvalues (wave speeds) that fill the eigenvectors.  Fills $\lambda_0$ (see Section \ref{sec:characteristic}).  {\color{red} These need to be replaced with the appropriate adjusted values.  Some of these fixeswill take place in \verb!eigenValue!.  See Section \ref{sec:characteristic}.}
 					\item \textbf{eigenVector} Fills the $\mathbf{L}$ and $\mathbf{R}$ eigenvectors in primative or conservative form (see Section \ref{sec:characteristic}). {\color{red} These need to be replaced with the appropriate for the eigenvectors.  See Section \ref{sec:characteristic}.}  Note that \verb!cons! is hard-wired to be \verb!false! for all relevant calls.
-					\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way." (sic)  ???  See Section 3 of MC, especially Section 3.2.  This computes \verb!sig!, the "transverse flux vector."  {\color{blue} \textbf{TODO: UPDATE THIS FILE TO BE COMPATIBLE WITH NEW VARIABLE ARRAYS!}}
-					\item \textbf{TVDslope} "This routine calculates limited slopes depending on the user's choice of the slope limiter."  We use a \verb!minmod! slope limiter.  \verb!delbar! (the vector $\bar{\Delta}$) is returned, which contains the limited slopes for primitive variables + \verb!gamc!, \verb!game!, and gravity.  It is similar to, but not the same as some of the slope limiters described on pages 46 and 47 of MC.  {\color{blue}\textbf{TODO: UPDATE THIS FILE TO BE COMPATIBLE WITH NEW VARIABLE ARRAYS!}}
+					\item \textbf{upwindTransverseFlux} "This routine advances species by locally an Eulerian algorithm in an unsplit way." (sic)  ???  See Section 3 of MC, especially Section 3.2.  This computes \verb!sig!, the "transverse flux vector."
+					\item \textbf{TVDslope} "This routine calculates limited slopes depending on the user's choice of the slope limiter."  We use a \verb!minmod! slope limiter.  \verb!delbar! (the vector $\bar{\Delta}$) is returned, which contains the limited slopes for primitive variables + \verb!gamc!, \verb!game!, and gravity.  It is similar to, but not the same as some of the slope limiters described on pages 46 and 47 of MC.  
 				\end{itemize}
 			\end{itemize}
+			\item \textbf{DataReconstOneStep} (Part 2) Alters the Riemann states to account for transverse fluxes.  $q = q - \frac{\Delta t}{2 \Delta y}\sigma$ where $\sigma$ is the transverse flux computed in \verb!upwindTransverseFlux! and $q$ is the Riemann state variable.  See Section \ref{sec:upwindTransverseFlux}. 
 			\item Applies geometric terms.  Not needed for Cartesian.
 			\item Updates Gravity.  It looks like they're just adding in the last term of MC 53.
 			\item Stores scratch terms for each direction.
@@ -179,10 +186,10 @@ such that $D \approx \frac{c}{3\sigma_{tot}}$ for optically thick regions and $D
 			\item \textbf{updateInternalEnergy} When flag \verb!hy_useAuxEintEqn! is set, computes 
 			\beq
 			{\color{red}
-			\rho \epsilon = \rho \epsilon + \frac{\Delta t}{\Delta x} \left( eF_L - eF_R + P (F_{P,L} - F_{P,R}) \right).
+			\rho \epsilon = \rho \epsilon + \frac{\Delta t}{\Delta x} \left( F_L^{(\epsilon)} - F_R^{(\epsilon)} + P (F_{L}^{(P)} - F_{R}^{(P)}) \right).  
 			}
 			\eeq
-			This is turned on by default in our simulations. {\color{blue} It seems like this should be modified.}
+			This is turned on by default in our simulations.  $P$ is the half-timestep volume averaged pressure.  $F^{(P)} = F^{(\rho)}/\rho$ is the "pressure flux." {\color{blue} It seems like this should be modified.}  
 		\end{itemize}
 		{\color{red}\item[multiTemp/unsplitUpdateMultiTemp] Updates energies for the special 3T conditions.  See Section \ref{sec:hydro} and the FLASH manual for more information on the "Rage-like" approach used here.  Some of the weird uhd crashes I've seen occur here.  There are comments that explicitly state these crashes occur for "unknown reasons."}
 		\begin{itemize}
@@ -345,6 +352,8 @@ L^*_n &=& \frac{1}{2} \left( -1 - \frac{\Delta t}{\Delta x} \lambda_{0}^n \right
 \eea
 where $\mathbf{R}^n$ is the $n$th column of $\mathbf{R}$.  There is a corresponding form of these equations for the right face states as well.
 
+The final face state 
+
 \section{Flattening}
 \label{sec:flattening}
 In \verb!hy_uhd_getRiemannState!, FLASH first calculates the following quantities that will help determine flattening coefficients
@@ -401,5 +410,30 @@ Then, artificial viscosity is applied.  In one dimension it is
 \verb!cvisc! = \verb!hy_cvisc! \max\left(v_{x,i-1} - v_{x,i},0 \right)
 F^{(\rho)}_{\rm visc} = F^{(\rho)} + \verb!cvisc! 
 \eea
+
+\subsection{upwindTransverseFlux}
+\label{sec:upwindTransverseFlux}
+\verb!upwindTransverseFlux! calculates the transverse flux vector, $\sigma$.
+
+For the $n$th wave speed, for each variable in $q$ we calculate the upwind difference
+\[
+    \Delta q_n = 
+\begin{cases}
+		q_i - q_{i-1},							& \text{if } \lambda_n > 0 \\
+    q_{i+1} - q_i               & \text{otherwise}.
+\end{cases}
+\]
+
+Then we calculate $\bar{\Delta}$
+\beq
+\bar{\Delta}_n = \mathbf{L}^n \cdot \Delta q_n.
+\eeq
+
+Finally, we get $\sigma$
+\beq
+\sigma = \sum_n \lambda_n \mathbf{R}^n \bar{\Delta}_n.
+\eeq
+
+This is the sum term calculated in Section 3.4 of the FLASH paper.
 
 \end{document}
